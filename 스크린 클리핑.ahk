@@ -57,7 +57,7 @@ WM_LBUTTONDBLCLK() {
 }
 
 ;Hotkey to select area
-PrintScreen & Lbutton::
+LWin & Lbutton::
 SCW_ScreenClip2Win(clip:=0) ; set to 1 to auto-copy to clipboard
 WinActivate, ScreenClippingWindow ahk_class AutoHotkeyGUI
 return

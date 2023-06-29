@@ -4,8 +4,6 @@ GList = 뒤로;(Browser_Back);{Browser_Back}|앞으로;(Browser_Forward);!{Brows
 
 
 
-
-
 /* 단축 모음 |(옆에 이거 만들고 이 위치 안에 만들기)|
 |전체 선택;(Ctrl+A);^a
 |잘라내기;(Ctrl+X);^x
@@ -229,6 +227,17 @@ Return
 Option:
 Gui, Show
 Return
+
+#ifWinActive ahk_exe LeagueClientUx.exe
+LButton::
+ExitApp
+return
+
+
+^+q::
+ExitApp
+return
+
 
 
 Exit:
