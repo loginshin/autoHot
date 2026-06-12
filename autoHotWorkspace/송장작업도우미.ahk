@@ -102,7 +102,10 @@ global m1_divider := myGui.AddText("x12 y174 w260 h1 Background0x313244", "")
 global m1_lblExcelTitle := myGui.AddText("x12 y190 w260 cWhite", "엑셀찾기")
 m1_lblExcelTitle.SetFont("s9 cWhite")
 
-global m1_lblExcelKeyword := myGui.AddText("x12 y216 w260 cGray", "엑셀에서 찾을 값")
+global m1_lblExcelKeyword := myGui.AddText("x12 y216 w150 cGray", "엑셀에서 찾을 값")
+global m1_btnAddressCrawl := myGui.AddButton("x176 y212 w96 h22 Background0x45475A", "주소 크롤링")
+m1_btnAddressCrawl.SetFont("s8 cWhite")
+m1_btnAddressCrawl.OnEvent("Click", CrawlAddressFromLastChrome)
 global m1_editExcelKeyword := myGui.AddEdit("x12 y236 w260 h24 Background0x313244 cWhite", "")
 
 global m1_lblCourier := myGui.AddText("x12 y266 w260 cGray", "택배사 B열")
@@ -111,13 +114,17 @@ global m1_editCourier := myGui.AddEdit("x12 y286 w260 h24 Background0x313244 cWh
 global m1_lblInvoice := myGui.AddText("x12 y316 w260 cGray", "송장번호 C열")
 global m1_editInvoice := myGui.AddEdit("x12 y336 w260 h24 Background0x313244 cWhite", "")
 
-global m1_btnCrawl := myGui.AddButton("x12 y372 w126 h30 Background0x45475A", "송장 크롤링")
+global m1_btnCrawl := myGui.AddButton("x12 y372 w92 h30 Background0x45475A", "송장 크롤링")
 m1_btnCrawl.SetFont("s9 cWhite")
 m1_btnCrawl.OnEvent("Click", CrawlFromLastChrome)
 
-global m1_btnFindExcel := myGui.AddButton("x146 y372 w126 h30 Background0x6C63FF", "엑셀찾기")
+global m1_btnFindExcel := myGui.AddButton("x110 y372 w82 h30 Background0x6C63FF", "엑셀찾기")
 m1_btnFindExcel.SetFont("s10 cWhite")
 m1_btnFindExcel.OnEvent("Click", FindInLastExcel)
+
+global m1_btnResetInputs := myGui.AddButton("x198 y372 w74 h30 Background0x45475A", "초기화")
+m1_btnResetInputs.SetFont("s9 cWhite")
+m1_btnResetInputs.OnEvent("Click", ResetInputs)
 
 global m1_lblExcelInfo := myGui.AddText("x12 y414 w260 h18 cGray", "중복 발견 시 입력하지 않습니다.")
 m1_lblExcelInfo.SetFont("s8")
@@ -206,6 +213,23 @@ ExcelEditEnter(wParam, lParam, msg, hwnd) {
 
 
 ; ───────────────────────────────────────────────────────────
+;  ResetInputs
+;  ------------------------------------------------------------
+;  네이버 검색어와 엑셀 입력값을 모두 비움
+; ───────────────────────────────────────────────────────────
+ResetInputs(*) {
+    global m1_editNaverKeyword, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
+
+    m1_editNaverKeyword.Value := ""
+    m1_editExcelKeyword.Value := ""
+    m1_editCourier.Value := ""
+    m1_editInvoice.Value := ""
+
+    SetStatus("입력값 초기화 완료", "idle")
+}
+
+
+; ───────────────────────────────────────────────────────────
 ;  ShowHelp
 ;  ------------------------------------------------------------
 ;  사용법 팝업
@@ -226,8 +250,8 @@ ShowHelp(*) {
     helpGui.AddText("x70 y44 w226", "검색어를 입력한 뒤")
     helpGui.AddText("x70 y60 w226", "[네이버] 버튼을 누릅니다.")
     helpGui.AddText("x70 y76 w226", "오늘 기준 최근 5일을 검색합니다.")
-    helpGui.AddText("x70 y92 w226", "[송장 크롤링]은 최근 Chrome 화면에서")
-    helpGui.AddText("x70 y108 w226", "주소/택배사/송장번호를 가져옵니다.")
+    helpGui.AddText("x70 y92 w226", "[주소 크롤링]은 엑셀 검색어를 채우고")
+    helpGui.AddText("x70 y108 w226", "[송장 크롤링]은 택배사/송장번호를 채웁니다.")
 
     ; 엑셀
     helpGui.SetFont("s8 c0x6C63FF")
@@ -419,44 +443,20 @@ TrackLastChromeWindow(*) {
 ;  최근 Chrome 페이지 텍스트에서 택배사/송장번호를 추출해 입력칸에 채움
 ; ───────────────────────────────────────────────────────────
 CrawlFromLastChrome(*) {
-    global lastChromeHwnd, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
+    global m1_editCourier, m1_editInvoice
 
-    if (!lastChromeHwnd || !WinExist("ahk_id " lastChromeHwnd)) {
-        lastChromeHwnd := WinExist("ahk_exe chrome.exe")
-    }
-
-    if (!lastChromeHwnd) {
-        SetStatus("열려 있는 Chrome 창 없음", "fail")
-        return
-    }
-
-    try {
-        WinActivate("ahk_id " lastChromeHwnd)
-        WinWaitActive("ahk_id " lastChromeHwnd, , 2)
-        Sleep(300)
-    } catch {
-        SetStatus("Chrome 창 활성화 실패", "fail")
-        return
-    }
-
-    pageText := CopyChromePageText()
+    pageText := GetLastChromePageText()
 
     if (Trim(pageText) = "") {
-        SetStatus("크롬 화면 텍스트를 가져오지 못했습니다", "fail")
         return
     }
 
     courier := ExtractCourier(pageText)
     invoice := ExtractInvoice(pageText)
-    addressKey := ExtractAddressSearchKey(pageText)
 
-    if (courier = "" && invoice = "" && addressKey = "") {
-        SetStatus("주소/택배사/송장번호를 찾지 못했습니다", "fail")
+    if (courier = "" && invoice = "") {
+        SetStatus("택배사/송장번호를 찾지 못했습니다", "fail")
         return
-    }
-
-    if (addressKey != "") {
-        m1_editExcelKeyword.Value := addressKey
     }
 
     if (courier != "") {
@@ -469,19 +469,73 @@ CrawlFromLastChrome(*) {
 
     summary := ""
 
-    if (addressKey != "") {
-        summary .= addressKey
-    }
-
     if (courier != "") {
-        summary .= (summary = "" ? "" : " / ") courier
+        summary .= courier
     }
 
     if (invoice != "") {
         summary .= (summary = "" ? "" : " / ") invoice
     }
 
-    SetStatus("크롤링 완료: " summary, "ok")
+    SetStatus("송장 크롤링 완료: " summary, "ok")
+}
+
+
+; ───────────────────────────────────────────────────────────
+;  CrawlAddressFromLastChrome
+;  ------------------------------------------------------------
+;  최근 Chrome 페이지 텍스트에서 주소 검색 키만 추출해 엑셀 검색어 입력칸에 채움
+; ───────────────────────────────────────────────────────────
+CrawlAddressFromLastChrome(*) {
+    global m1_editExcelKeyword
+
+    pageText := GetLastChromePageText()
+
+    if (Trim(pageText) = "") {
+        return
+    }
+
+    addressKey := ExtractAddressSearchKey(pageText)
+
+    if (addressKey = "") {
+        SetStatus("주소를 찾지 못했습니다", "fail")
+        return
+    }
+
+    m1_editExcelKeyword.Value := addressKey
+    SetStatus("주소 크롤링 완료: " addressKey, "ok")
+}
+
+
+GetLastChromePageText() {
+    global lastChromeHwnd
+
+    if (!lastChromeHwnd || !WinExist("ahk_id " lastChromeHwnd)) {
+        lastChromeHwnd := WinExist("ahk_exe chrome.exe")
+    }
+
+    if (!lastChromeHwnd) {
+        SetStatus("열려 있는 Chrome 창 없음", "fail")
+        return ""
+    }
+
+    try {
+        WinActivate("ahk_id " lastChromeHwnd)
+        WinWaitActive("ahk_id " lastChromeHwnd, , 2)
+        Sleep(300)
+    } catch {
+        SetStatus("Chrome 창 활성화 실패", "fail")
+        return ""
+    }
+
+    pageText := CopyChromePageText()
+
+    if (Trim(pageText) = "") {
+        SetStatus("크롬 화면 텍스트를 가져오지 못했습니다", "fail")
+        return ""
+    }
+
+    return pageText
 }
 
 
