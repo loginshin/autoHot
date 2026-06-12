@@ -29,6 +29,8 @@ global MAX_HISTORY := 20
 global statusColor := Map("ok", "0x2ECC71", "fail", "0xE74C3C", "idle", "0x95A5A6")
 global isPinned    := true
 global currentMode := 1
+global marketOptions := ["네이버", "11번가", "G마켓", "옥션", "쿠팡"]
+global selectedMarket := marketOptions[1]
 
 ; 마지막으로 사용자가 활성화했던 Excel 창의 HWND
 ; - 여러 Excel 창을 켜둔 경우, 가장 최근에 사용한 Excel 창을 기억하기 위해 사용
@@ -55,11 +57,15 @@ myGui.SetFont("s9 cWhite", "Segoe UI")
 
 myGui.AddText("x12 y14 cWhite", "⌨  자동화 도구")
 
-global btnHelp := myGui.AddButton("x158 y8 w56 h24 Background0x6C63FF", "❓ 사용법")
+global ddlMarket := myGui.AddDropDownList("x106 y8 w76 Background0x313244 cWhite Choose1", marketOptions)
+ddlMarket.SetFont("s8 cWhite")
+ddlMarket.OnEvent("Change", ChangeMarket)
+
+global btnHelp := myGui.AddButton("x188 y8 w40 h24 Background0x6C63FF", "도움")
 btnHelp.SetFont("s8 cWhite")
 btnHelp.OnEvent("Click", ShowHelp)
 
-global btnPin := myGui.AddButton("x218 y8 w54 h24 Background0x45475A", "📌 ON")
+global btnPin := myGui.AddButton("x234 y8 w38 h24 Background0x45475A", "ON")
 btnPin.SetFont("s8 cWhite")
 btnPin.OnEvent("Click", TogglePin)
 
@@ -181,11 +187,24 @@ TogglePin(*) {
 
     if isPinned {
         myGui.Opt("+AlwaysOnTop")
-        btnPin.Text := "📌 ON"
+        btnPin.Text := "ON"
     } else {
         myGui.Opt("-AlwaysOnTop")
-        btnPin.Text := "📍 OFF"
+        btnPin.Text := "OFF"
     }
+}
+
+
+; ───────────────────────────────────────────────────────────
+;  ChangeMarket
+;  ------------------------------------------------------------
+;  이후 쇼핑몰별 검색/크롤링 구현을 위한 선택값만 저장
+; ───────────────────────────────────────────────────────────
+ChangeMarket(ctrl, *) {
+    global selectedMarket, marketOptions
+
+    selectedMarket := marketOptions[ctrl.Value]
+    SetStatus("선택 쇼핑몰: " selectedMarket, "idle")
 }
 
 
