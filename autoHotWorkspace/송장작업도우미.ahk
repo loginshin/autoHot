@@ -175,7 +175,7 @@ ApplyMainWindowOpacity()
 SetTimer(TrackLastExcelWindow, 300)
 SetTimer(TrackLastChromeWindow, 300)
 OnMessage(0x0100, ExcelEditEnter)
-Hotkey("#/", OpenMarketSearch)
+Hotkey("#vkBF", OpenMarketSearch)
 Hotkey("#F2", CrawlAddressFromLastChrome)
 Hotkey("#F3", CrawlFromLastChrome)
 
@@ -188,23 +188,105 @@ ShowHelp()
 ; ════════════════════════════════════════════════════════════
 
 
+LoadSettings() {
+    global settingsFile, isPinned, selectedMarket, windowOpacity
+
+    selectedMarket := IniRead(settingsFile, "Settings", "Market", selectedMarket)
+
+    if (!IsValidMarket(selectedMarket)) {
+        selectedMarket := "네이버"
+    }
+
+    isPinned := IniRead(settingsFile, "Settings", "AlwaysOnTop", isPinned ? "1" : "0") = "1"
+    windowOpacity := ClampInteger(IniRead(settingsFile, "Settings", "Opacity", "255"), 80, 255)
+}
+
+
+SaveSettings() {
+    global settingsFile, isPinned, selectedMarket, windowOpacity
+
+    IniWrite(selectedMarket, settingsFile, "Settings", "Market")
+    IniWrite(isPinned ? "1" : "0", settingsFile, "Settings", "AlwaysOnTop")
+    IniWrite(windowOpacity, settingsFile, "Settings", "Opacity")
+}
+
+
+IsValidMarket(market) {
+    global marketOptions
+
+    for option in marketOptions {
+        if (option = market) {
+            return true
+        }
+    }
+
+    return false
+}
+
+
+GetMarketIndex(market) {
+    global marketOptions
+
+    for index, option in marketOptions {
+        if (option = market) {
+            return index
+        }
+    }
+
+    return 1
+}
+
+
+ClampInteger(value, minValue, maxValue) {
+    try {
+        number := Integer(value)
+    } catch {
+        number := maxValue
+    }
+
+    if (number < minValue) {
+        return minValue
+    }
+
+    if (number > maxValue) {
+        return maxValue
+    }
+
+    return number
+}
+
+
+ApplyMainWindowOpacity() {
+    global myGui, windowOpacity
+
+    if (windowOpacity >= 255) {
+        WinSetTransparent("Off", "ahk_id " myGui.Hwnd)
+        return
+    }
+
+    WinSetTransparent(windowOpacity, "ahk_id " myGui.Hwnd)
+}
+
+
+ApplyPinnedState() {
+    global isPinned, myGui, btnPin
+
+    myGui.Opt(isPinned ? "+AlwaysOnTop" : "-AlwaysOnTop")
+    btnPin.Text := isPinned ? "ON" : "OFF"
+}
+
+
 ; ───────────────────────────────────────────────────────────
 ;  TogglePin
 ;  ------------------------------------------------------------
 ;  GUI 창 상단 고정 ON/OFF
 ; ───────────────────────────────────────────────────────────
 TogglePin(*) {
-    global isPinned, myGui, btnPin
+    global isPinned
 
     isPinned := !isPinned
-
-    if isPinned {
-        myGui.Opt("+AlwaysOnTop")
-        btnPin.Text := "ON"
-    } else {
-        myGui.Opt("-AlwaysOnTop")
-        btnPin.Text := "OFF"
-    }
+    ApplyPinnedState()
+    SaveSettings()
 }
 
 
@@ -214,10 +296,85 @@ TogglePin(*) {
 ;  이후 쇼핑몰별 검색/크롤링 구현을 위한 선택값만 저장
 ; ───────────────────────────────────────────────────────────
 ChangeMarket(ctrl, *) {
-    global selectedMarket, marketOptions
+    global selectedMarket, marketOptions, lblMarketDisplay
 
     selectedMarket := marketOptions[ctrl.Value]
+    lblMarketDisplay.Text := selectedMarket
     SetStatus("선택 쇼핑몰: " selectedMarket, "idle")
+}
+
+
+ShowSettings(*) {
+    global myGui, isPinned, selectedMarket, marketOptions, windowOpacity
+
+    originalOpacity := windowOpacity
+    settingsGui := Gui("+Owner" myGui.Hwnd " +AlwaysOnTop -MaximizeBox -MinimizeBox", "설정")
+    settingsGui.BackColor := "0x1E1E2E"
+    settingsGui.SetFont("s9 cWhite", "Segoe UI")
+
+    settingsGui.AddText("x16 y18 w240 cWhite", "프로그램 설정")
+
+    chkPinned := settingsGui.AddCheckBox("x16 y54 w220 h24 cWhite", "상단 고정")
+    chkPinned.Value := isPinned ? 1 : 0
+
+    settingsGui.AddText("x16 y92 w96 cGray", "이커머스")
+    ddlSettingsMarket := settingsGui.AddDropDownList("x96 y88 w150 Background0x313244 cWhite Choose" GetMarketIndex(selectedMarket), marketOptions)
+
+    settingsGui.AddText("x16 y132 w96 cGray", "투명도")
+    lblOpacityValue := settingsGui.AddText("x216 y132 w40 cWhite", Round(windowOpacity / 255 * 100) "%")
+    sldOpacity := settingsGui.AddSlider("x16 y154 w240 Range80-255 ToolTip", windowOpacity)
+    sldOpacity.OnEvent("Change", (*) => PreviewOpacity(sldOpacity, lblOpacityValue))
+
+    settingsGui.AddText("x16 y194 w240 cGray", "단축키: Win+/ 검색, Win+F2 주소, Win+F3 송장")
+
+    btnSave := settingsGui.AddButton("x16 y232 w76 h28 Background0x6C63FF", "저장")
+    btnSave.SetFont("s9 cWhite")
+    btnSave.OnEvent("Click", (*) => SaveSettingsFromPopup(settingsGui, chkPinned, ddlSettingsMarket, sldOpacity))
+
+    btnHelpPopup := settingsGui.AddButton("x100 y232 w76 h28 Background0x45475A", "도움")
+    btnHelpPopup.SetFont("s9 cWhite")
+    btnHelpPopup.OnEvent("Click", ShowHelp)
+
+    btnCancel := settingsGui.AddButton("x184 y232 w76 h28 Background0x45475A", "취소")
+    btnCancel.SetFont("s9 cWhite")
+    btnCancel.OnEvent("Click", (*) => CancelSettingsPopup(settingsGui, originalOpacity))
+
+    settingsGui.Show("w276 h276")
+}
+
+
+PreviewOpacity(slider, label) {
+    global windowOpacity
+
+    windowOpacity := slider.Value
+    label.Text := Round(windowOpacity / 255 * 100) "%"
+    ApplyMainWindowOpacity()
+}
+
+
+SaveSettingsFromPopup(settingsGui, chkPinned, ddlSettingsMarket, sldOpacity) {
+    global isPinned, selectedMarket, marketOptions, windowOpacity, lblMarketDisplay
+
+    isPinned := chkPinned.Value = 1
+    selectedMarket := marketOptions[ddlSettingsMarket.Value]
+    windowOpacity := sldOpacity.Value
+
+    lblMarketDisplay.Text := selectedMarket
+    ApplyPinnedState()
+    ApplyMainWindowOpacity()
+    SaveSettings()
+
+    SetStatus("설정 저장 완료", "ok")
+    settingsGui.Destroy()
+}
+
+
+CancelSettingsPopup(settingsGui, originalOpacity) {
+    global windowOpacity
+
+    windowOpacity := originalOpacity
+    ApplyMainWindowOpacity()
+    settingsGui.Destroy()
 }
 
 
