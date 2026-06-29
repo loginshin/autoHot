@@ -30,6 +30,10 @@ global isPinned    := true
 global currentMode := 1
 global marketOptions := ["네이버", "11번가", "G마켓", "옥션", "쿠팡"]
 global selectedMarket := marketOptions[1]
+global settingsFile := A_ScriptDir "\송장작업도우미.ini"
+global windowOpacity := 255
+
+LoadSettings()
 
 ; 마지막으로 사용자가 활성화했던 Excel 창의 HWND
 ; - 여러 Excel 창을 켜둔 경우, 가장 최근에 사용한 Excel 창을 기억하기 위해 사용
@@ -45,7 +49,7 @@ global lastChromeHwnd := 0
 ;  SECTION 2 — GUI 초기화
 ; ════════════════════════════════════════════════════════════
 
-myGui := Gui("+AlwaysOnTop -MaximizeBox +MinimizeBox", "자동화 도구")
+myGui := Gui((isPinned ? "+AlwaysOnTop " : "") "-MaximizeBox +MinimizeBox", "자동화 도구")
 myGui.BackColor := "0x1E1E2E"
 myGui.SetFont("s9 cWhite", "Segoe UI")
 
@@ -56,17 +60,17 @@ myGui.SetFont("s9 cWhite", "Segoe UI")
 
 myGui.AddText("x12 y14 cWhite", "⌨  자동화 도구")
 
-global ddlMarket := myGui.AddDropDownList("x106 y8 w76 Background0x313244 cWhite Choose1", marketOptions)
-ddlMarket.SetFont("s8 cWhite")
-ddlMarket.OnEvent("Change", ChangeMarket)
+global lblMarketDisplay := myGui.AddText("x106 y13 w76 cGray", selectedMarket)
+lblMarketDisplay.SetFont("s8 cGray")
 
-global btnHelp := myGui.AddButton("x188 y8 w40 h24 Background0x6C63FF", "도움")
-btnHelp.SetFont("s8 cWhite")
-btnHelp.OnEvent("Click", ShowHelp)
+global btnSettings := myGui.AddButton("x188 y8 w40 h24 Background0x6C63FF", "설정")
+btnSettings.SetFont("s8 cWhite")
+btnSettings.OnEvent("Click", ShowSettings)
 
 global btnPin := myGui.AddButton("x234 y8 w38 h24 Background0x45475A", "ON")
 btnPin.SetFont("s8 cWhite")
 btnPin.OnEvent("Click", TogglePin)
+btnPin.Text := isPinned ? "ON" : "OFF"
 
 
 ; ════════════════════════════════════════════════════════════
@@ -163,6 +167,7 @@ myGui.OnEvent("Close", (*) => ExitApp())
 
 xPos := A_ScreenWidth - 310
 myGui.Show("w284 h632 x" xPos " y40")
+ApplyMainWindowOpacity()
 
 ; Excel 창 추적 타이머
 ; - 0.3초마다 현재 활성 창이 Excel인지 확인
@@ -170,6 +175,9 @@ myGui.Show("w284 h632 x" xPos " y40")
 SetTimer(TrackLastExcelWindow, 300)
 SetTimer(TrackLastChromeWindow, 300)
 OnMessage(0x0100, ExcelEditEnter)
+Hotkey("#/", OpenMarketSearch)
+Hotkey("#F2", CrawlAddressFromLastChrome)
+Hotkey("#F3", CrawlFromLastChrome)
 
 ; 시작 시 사용법 자동 표시
 ShowHelp()
@@ -1079,10 +1087,36 @@ SetCellValue(ws, row, column, value) {
 
 
 NormalizeFindText(value) {
-    text := "" value
+    try {
+        text := "" value
+    } catch {
+        return ""
+    }
+
     text := RegExReplace(text, "[\s　]+", "")
 
     return StrLower(text)
+}
+
+
+GetComparableCellText(cell) {
+    normalizedValue := ""
+
+    try {
+        normalizedValue := NormalizeFindText(cell.Value2)
+    } catch {
+        normalizedValue := ""
+    }
+
+    if (normalizedValue != "") {
+        return normalizedValue
+    }
+
+    try {
+        return NormalizeFindText(cell.Text)
+    } catch {
+        return ""
+    }
 }
 
 
@@ -1133,13 +1167,7 @@ GetAllSpaceInsensitiveMatches(rng, keyword) {
         Loop columnCount {
             columnIndex := A_Index
             cell := ComRetry(() => rng.Cells(rowIndex, columnIndex))
-            value := ComRetry(() => cell.Value)
-
-            if (value = "") {
-                continue
-            }
-
-            normalizedValue := NormalizeFindText(value)
+            normalizedValue := GetComparableCellText(cell)
 
             if (normalizedValue != "" && InStr(normalizedValue, normalizedKeyword, false)) {
                 matches.Push(cell)
