@@ -4,10 +4,9 @@
 ;  자동화 도구
 ;  ------------------------------------------------------------
 ;  기능 요약
-;    1. 네이버 쇼핑 구매내역 검색
-;       - 기준일과 검색어 입력
-;       - 기준일 기준 5일 전부터 기준일까지 검색
-;       - 크롬 새 창으로 네이버 구매내역 페이지 실행
+;    1. 선택 쇼핑몰 검색
+;       - 쇼핑몰 선택과 검색어 입력
+;       - 선택한 쇼핑몰 검색 페이지를 Chrome으로 실행
 ;
 ;    2. 엑셀찾기
 ;       - 엑셀 검색어 입력
@@ -74,24 +73,24 @@ btnPin.OnEvent("Click", TogglePin)
 ;  SECTION 2-3 — Mode 1 컨트롤
 ;  ------------------------------------------------------------
 ;  Mode 1 안에 들어가는 기능
-;    1. 네이버 쇼핑 구매내역 검색
+;    1. 선택 쇼핑몰 검색
 ;    2. 마지막으로 사용한 Excel 창에서 값 찾기
 ; ════════════════════════════════════════════════════════════
 
 
 ; ───────────────────────────────────────────────────────────
-;  Mode 1-A. 네이버 쇼핑 구매내역 검색
+;  Mode 1-A. 선택 쇼핑몰 검색
 ; ───────────────────────────────────────────────────────────
 
-global m1_lblNaverTitle := myGui.AddText("x12 y48 w260 cWhite", "네이버 쇼핑 구매내역 검색")
+global m1_lblNaverTitle := myGui.AddText("x12 y48 w260 cWhite", "쇼핑몰 검색")
 m1_lblNaverTitle.SetFont("s9 cWhite")
 
-global m1_lblNaverKeyword := myGui.AddText("x12 y74 w260 cGray", "네이버 검색어")
+global m1_lblNaverKeyword := myGui.AddText("x12 y74 w260 cGray", "검색어")
 global m1_editNaverKeyword := myGui.AddEdit("x12 y94 w260 h24 Background0x313244 cWhite", "")
 
-global m1_btnNaver := myGui.AddButton("x12 y128 w260 h30 Default Background0x03C75A", "네이버")
+global m1_btnNaver := myGui.AddButton("x12 y128 w260 h30 Default Background0x03C75A", "선택 쇼핑몰 검색")
 m1_btnNaver.SetFont("s10 cWhite")
-m1_btnNaver.OnEvent("Click", OpenNaverShopping)
+m1_btnNaver.OnEvent("Click", OpenMarketSearch)
 
 
 ; 구분선
@@ -115,10 +114,16 @@ m1_btnAddressCrawl.OnEvent("Click", CrawlAddressFromLastChrome)
 global m1_editExcelKeyword := myGui.AddEdit("x12 y236 w260 h24 Background0x313244 cWhite", "")
 
 global m1_lblCourier := myGui.AddText("x12 y266 w260 cGray", "택배사 B열")
-global m1_editCourier := myGui.AddEdit("x12 y286 w260 h24 Background0x313244 cWhite", "")
+global m1_editCourier := myGui.AddEdit("x12 y286 w210 h24 Background0x313244 cWhite", "")
+global m1_btnCopyCourier := myGui.AddButton("x228 y286 w44 h24 Background0x45475A", "복사")
+m1_btnCopyCourier.SetFont("s8 cWhite")
+m1_btnCopyCourier.OnEvent("Click", CopyCourier)
 
 global m1_lblInvoice := myGui.AddText("x12 y316 w260 cGray", "송장번호 C열")
-global m1_editInvoice := myGui.AddEdit("x12 y336 w260 h24 Background0x313244 cWhite", "")
+global m1_editInvoice := myGui.AddEdit("x12 y336 w210 h24 Background0x313244 cWhite", "")
+global m1_btnCopyInvoice := myGui.AddButton("x228 y336 w44 h24 Background0x45475A", "복사")
+m1_btnCopyInvoice.SetFont("s8 cWhite")
+m1_btnCopyInvoice.OnEvent("Click", CopyInvoice)
 
 global m1_btnCrawl := myGui.AddButton("x12 y372 w92 h30 Background0x45475A", "송장 크롤링")
 m1_btnCrawl.SetFont("s9 cWhite")
@@ -248,6 +253,33 @@ ResetInputs(*) {
 }
 
 
+CopyCourier(*) {
+    global m1_editCourier
+
+    CopyInputValue(m1_editCourier, "택배사")
+}
+
+
+CopyInvoice(*) {
+    global m1_editInvoice
+
+    CopyInputValue(m1_editInvoice, "송장번호")
+}
+
+
+CopyInputValue(editCtrl, label) {
+    value := Trim(editCtrl.Value)
+
+    if (value = "") {
+        SetStatus(label " 값이 없습니다", "fail")
+        return
+    }
+
+    A_Clipboard := value
+    SetStatus(label " 복사 완료", "ok")
+}
+
+
 ; ───────────────────────────────────────────────────────────
 ;  ShowHelp
 ;  ------------------------------------------------------------
@@ -263,12 +295,12 @@ ShowHelp(*) {
     helpGui.AddText("x16 y16 w280 cWhite", "📖  사용법")
     helpGui.SetFont("s8 cGray")
 
-    ; 네이버
-    helpGui.AddText("x16 y44 w52 c0x03C75A", "네이버")
+    ; 쇼핑몰
+    helpGui.AddText("x16 y44 w52 c0x03C75A", "쇼핑몰")
     helpGui.SetFont("s8 cWhite")
-    helpGui.AddText("x70 y44 w226", "검색어를 입력한 뒤")
-    helpGui.AddText("x70 y60 w226", "[네이버] 버튼을 누릅니다.")
-    helpGui.AddText("x70 y76 w226", "오늘 기준 최근 5일을 검색합니다.")
+    helpGui.AddText("x70 y44 w226", "상단에서 쇼핑몰을 선택하고")
+    helpGui.AddText("x70 y60 w226", "검색어 입력 후 검색 버튼을 누릅니다.")
+    helpGui.AddText("x70 y76 w226", "네이버는 기존 구매내역 검색을 엽니다.")
     helpGui.AddText("x70 y92 w226", "[주소 크롤링]은 엑셀 검색어를 채우고")
     helpGui.AddText("x70 y108 w226", "[송장 크롤링]은 택배사/송장번호를 채웁니다.")
 
@@ -391,43 +423,26 @@ AddHistory(keyword, found) {
 
 
 ; ════════════════════════════════════════════════════════════
-;  SECTION 5 — 네이버 쇼핑 구매내역 검색
+;  SECTION 5 — 쇼핑몰 검색
 ; ════════════════════════════════════════════════════════════
 
 
 ; ───────────────────────────────────────────────────────────
-;  OpenNaverShopping
+;  OpenMarketSearch
 ;  ------------------------------------------------------------
-;  네이버 쇼핑 구매내역 URL 생성 후 실행
-;
-;  날짜 규칙
-;    - 기준일 비어 있음: 오늘 날짜 사용
-;    - startDate: 기준일 - 5일
-;    - endDate  : 기준일
+;  선택한 쇼핑몰 기준으로 검색 URL 생성 후 실행
 ; ───────────────────────────────────────────────────────────
-OpenNaverShopping(*) {
-    global m1_editNaverKeyword
+OpenMarketSearch(*) {
+    global m1_editNaverKeyword, selectedMarket
 
     keyword := Trim(m1_editNaverKeyword.Value)
 
     if (keyword = "") {
-        SetStatus("네이버 검색어를 입력하세요", "fail")
+        SetStatus("검색어를 입력하세요", "fail")
         return
     }
 
-    ; 오늘 기준으로 endDate 설정
-    endDateRaw := A_Now
-    endDate := FormatTime(endDateRaw, "yyyy-MM-dd")
-
-    ; 오늘 기준 5일 전부터 검색
-    startDateRaw := DateAdd(endDateRaw, -5, "Days")
-    startDate := FormatTime(startDateRaw, "yyyy-MM-dd")
-
-    encodedKeyword := UrlEncode(keyword)
-
-    url := "https://shopping.naver.com/my/order?startDate=" startDate
-        . "&endDate=" endDate
-        . "&keyword=" encodedKeyword
+    url := CreateMarketSearchUrl(selectedMarket, keyword)
 
     try {
         Run("chrome.exe " Chr(34) url Chr(34))
@@ -436,7 +451,41 @@ OpenNaverShopping(*) {
     }
 
     AddHistory(keyword, true)
-    SetStatus("네이버 검색: " startDate " ~ " endDate, "ok")
+    SetStatus(selectedMarket " 검색: " keyword, "ok")
+}
+
+
+CreateMarketSearchUrl(market, keyword) {
+    encodedKeyword := UrlEncode(keyword)
+
+    if (market = "네이버") {
+        endDateRaw := A_Now
+        endDate := FormatTime(endDateRaw, "yyyy-MM-dd")
+        startDateRaw := DateAdd(endDateRaw, -5, "Days")
+        startDate := FormatTime(startDateRaw, "yyyy-MM-dd")
+
+        return "https://shopping.naver.com/my/order?startDate=" startDate
+            . "&endDate=" endDate
+            . "&keyword=" encodedKeyword
+    }
+
+    if (market = "11번가") {
+        return "https://search.11st.co.kr/Search.tmall?kwd=" encodedKeyword
+    }
+
+    if (market = "G마켓") {
+        return "https://browse.gmarket.co.kr/search?keyword=" encodedKeyword
+    }
+
+    if (market = "옥션") {
+        return "https://browse.auction.co.kr/search?keyword=" encodedKeyword
+    }
+
+    if (market = "쿠팡") {
+        return "https://www.coupang.com/np/search?q=" encodedKeyword
+    }
+
+    return "https://www.google.com/search?q=" encodedKeyword
 }
 
 
@@ -870,6 +919,7 @@ TrackLastExcelWindow(*) {
 ;  검색 방식
 ;    - 부분 일치
 ;    - 대소문자 구분 없음
+;    - 검색어와 셀 값의 모든 공백을 제거한 뒤 비교
 ; ───────────────────────────────────────────────────────────
 FindInLastExcel(*) {
     global lastExcelHwnd, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
@@ -922,22 +972,15 @@ FindInLastExcel(*) {
         ws := ComRetry(() => xl.ActiveSheet)
         rng := ComRetry(() => ws.UsedRange)
 
-        ; Range.Find 인자
-        ;   What            : keyword
-        ;   LookIn          : -4163 = xlValues
-        ;   LookAt          : 2 = xlPart
-        ;   SearchOrder     : 1 = xlByRows
-        ;   SearchDirection : 1 = xlNext
-        ;   MatchCase       : false
-        found := ComRetry(() => rng.Find(keyword, , -4163, 2, 1, 1, false))
+        matchedCells := GetAllSpaceInsensitiveMatches(rng, keyword)
 
-        if !found {
+        if (matchedCells.Length = 0) {
             AddHistory(keyword, false)
             SetStatus("엑셀에서 찾지 못함: " keyword, "fail")
             return
         }
 
-        matchedCells := GetAllFindMatches(rng, found)
+        found := matchedCells[1]
 
         if (matchedCells.Length > 1) {
             ComRetry(() => xl.Goto(found, true))
@@ -989,6 +1032,14 @@ SetCellValue(ws, row, column, value) {
 }
 
 
+NormalizeFindText(value) {
+    text := "" value
+    text := RegExReplace(text, "[\s　]+", "")
+
+    return StrLower(text)
+}
+
+
 ; ───────────────────────────────────────────────────────────
 ;  ComRetry
 ;  ------------------------------------------------------------
@@ -1011,6 +1062,46 @@ ComRetry(action, attempts := 10, delayMs := 150) {
     }
 
     throw Error("COM 호출 실패")
+}
+
+
+; ───────────────────────────────────────────────────────────
+;  GetAllSpaceInsensitiveMatches
+;  ------------------------------------------------------------
+;  UsedRange 전체를 순회하며 검색어/셀 값의 공백을 모두 제거한 뒤 부분 일치 비교
+; ───────────────────────────────────────────────────────────
+GetAllSpaceInsensitiveMatches(rng, keyword) {
+    matches := []
+    normalizedKeyword := NormalizeFindText(keyword)
+
+    if (normalizedKeyword = "") {
+        return matches
+    }
+
+    rowCount := ComRetry(() => rng.Rows.Count)
+    columnCount := ComRetry(() => rng.Columns.Count)
+
+    Loop rowCount {
+        rowIndex := A_Index
+
+        Loop columnCount {
+            columnIndex := A_Index
+            cell := ComRetry(() => rng.Cells(rowIndex, columnIndex))
+            value := ComRetry(() => cell.Value)
+
+            if (value = "") {
+                continue
+            }
+
+            normalizedValue := NormalizeFindText(value)
+
+            if (normalizedValue != "" && InStr(normalizedValue, normalizedKeyword, false)) {
+                matches.Push(cell)
+            }
+        }
+    }
+
+    return matches
 }
 
 
