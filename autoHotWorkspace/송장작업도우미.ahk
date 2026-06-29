@@ -457,35 +457,81 @@ OpenMarketSearch(*) {
 
 CreateMarketSearchUrl(market, keyword) {
     encodedKeyword := UrlEncode(keyword)
+    formKeyword := UrlFormEncode(keyword)
 
     if (market = "네이버") {
-        endDateRaw := A_Now
-        endDate := FormatTime(endDateRaw, "yyyy-MM-dd")
-        startDateRaw := DateAdd(endDateRaw, -5, "Days")
-        startDate := FormatTime(startDateRaw, "yyyy-MM-dd")
+        dates := GetRecentSearchDates()
 
-        return "https://shopping.naver.com/my/order?startDate=" startDate
-            . "&endDate=" endDate
+        return "https://shopping.naver.com/my/order?startDate=" dates.displayStart
+            . "&endDate=" dates.displayEnd
             . "&keyword=" encodedKeyword
     }
 
     if (market = "11번가") {
-        return "https://search.11st.co.kr/Search.tmall?kwd=" encodedKeyword
+        dates := GetRecentSearchDates()
+
+        return "https://buy.11st.co.kr/my11st/order/OrderList.tmall?currpageNo="
+            . "&pageNumber=1"
+            . "&pageNumberPendingDone=1"
+            . "&pageNumberPendingFail=1"
+            . "&shDateFrom=" dates.compactStart
+            . "&shDateTo=" dates.compactEnd
+            . "&shPrdNm=" formKeyword
+            . "&shOrdprdStat=%2C%2C%2C%2C"
+            . "&type=orderList2nd"
+            . "&ver=02"
+            . "&nDate="
     }
 
     if (market = "G마켓") {
-        return "https://browse.gmarket.co.kr/search?keyword=" encodedKeyword
+        dates := GetRecentSearchDates()
+
+        return "https://my.gmarket.co.kr/ko/pc/list/all?pageNo=1"
+            . "&searchRangeEnum=All"
+            . "&searchStartDate=" UrlEncode(dates.utcStart)
+            . "&searchEndDate=" UrlEncode(dates.utcEnd)
+            . "&searchWord=" encodedKeyword
+            . "&searchKindEnum=All"
     }
 
     if (market = "옥션") {
-        return "https://browse.auction.co.kr/search?keyword=" encodedKeyword
+        return "https://escrow.auction.co.kr/Close/OrderProcessList.aspx?tabType=S&SearchStatus=10&SearchOption=0"
     }
 
     if (market = "쿠팡") {
-        return "https://www.coupang.com/np/search?q=" encodedKeyword
+        return "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword=" encodedKeyword
     }
 
     return "https://www.google.com/search?q=" encodedKeyword
+}
+
+
+GetRecentSearchDates() {
+    endDateRaw := A_Now
+    startDateRaw := DateAdd(endDateRaw, -5, "Days")
+
+    return {
+        displayStart: FormatTime(startDateRaw, "yyyy-MM-dd"),
+        displayEnd: FormatTime(endDateRaw, "yyyy-MM-dd"),
+        compactStart: FormatTime(startDateRaw, "yyyyMMdd"),
+        compactEnd: FormatTime(endDateRaw, "yyyyMMdd"),
+        utcStart: FormatGmarketUtcDate(startDateRaw),
+        utcEnd: FormatGmarketUtcDate(endDateRaw, 1)
+    }
+}
+
+
+FormatGmarketUtcDate(dateRaw, addDays := 0) {
+    localMidnight := FormatTime(dateRaw, "yyyyMMdd") "000000"
+    localBoundary := addDays ? DateAdd(localMidnight, addDays, "Days") : localMidnight
+    utcDateRaw := DateAdd(localBoundary, -9, "Hours")
+
+    return FormatTime(utcDateRaw, "yyyy-MM-dd") "T" FormatTime(utcDateRaw, "HH:mm:ss") ".000Z"
+}
+
+
+UrlFormEncode(str) {
+    return StrReplace(UrlEncode(str), "%20", "+")
 }
 
 
