@@ -939,6 +939,13 @@ NormalizeCourier(courier) {
 ExtractInvoice(text) {
     normalized := StrReplace(text, "`r`n", "`n")
     normalized := StrReplace(normalized, "`r", "`n")
+
+    invoice := ExtractInvoiceNearCourier(normalized)
+
+    if (invoice != "") {
+        return invoice
+    }
+
     lines := StrSplit(normalized, "`n")
 
     for i, line in lines {
@@ -962,6 +969,19 @@ ExtractInvoice(text) {
     }
 
     return ExtractInvoiceNumber(normalized)
+}
+
+
+ExtractInvoiceNearCourier(text) {
+    compactText := RegExReplace(text, "<[^>]+>", " ")
+    compactText := RegExReplace(compactText, "\s+", " ")
+    courierPattern := "CJ대한통운|대한통운|한진택배|롯데택배|우체국택배|우체국|로젠택배|로젠|경동택배|대신택배|일양로지스|합동택배|천일택배|건영택배|쿠팡로지스틱스|DHL|FedEx|UPS|EMS"
+
+    if RegExMatch(compactText, "i)(" courierPattern ")\s*[:：-]?\s*(\d[\d\s-]{7,}\d)", &match) {
+        return ExtractInvoiceNumber(match[2])
+    }
+
+    return ""
 }
 
 
@@ -1212,6 +1232,14 @@ FindInLastExcel(*) {
         courier := Trim(m1_editCourier.Value)
         invoice := Trim(m1_editInvoice.Value)
 
+        occupiedColumns := GetOccupiedTargetColumns(ws, foundRow, courier != "", invoice != "")
+
+        if (occupiedColumns != "") {
+            AddHistory(keyword, false)
+            SetStatus(occupiedColumns "에 이미 값이 있습니다 - 입력 중단", "fail")
+            return
+        }
+
         ; B열 = 택배사
         if (courier != "") {
             ComRetry(() => SetCellValue(ws, foundRow, 2, courier))
@@ -1240,6 +1268,44 @@ SetScrollColumn(xl, column) {
 
 SetCellValue(ws, row, column, value) {
     ws.Cells(row, column).Value := value
+}
+
+
+GetOccupiedTargetColumns(ws, row, shouldCheckCourier, shouldCheckInvoice) {
+    occupied := ""
+
+    if (shouldCheckCourier && !IsExcelCellBlank(ws, row, 2)) {
+        occupied .= "B열 택배사"
+    }
+
+    if (shouldCheckInvoice && !IsExcelCellBlank(ws, row, 3)) {
+        occupied .= (occupied = "" ? "" : ", ") "C열 송장번호"
+    }
+
+    return occupied
+}
+
+
+IsExcelCellBlank(ws, row, column) {
+    cell := ComRetry(() => ws.Cells(row, column))
+
+    try {
+        valueText := NormalizeFindText(cell.Value2)
+    } catch {
+        valueText := ""
+    }
+
+    if (valueText != "") {
+        return false
+    }
+
+    try {
+        displayText := Trim("" cell.Text)
+    } catch {
+        displayText := ""
+    }
+
+    return displayText = ""
 }
 
 
