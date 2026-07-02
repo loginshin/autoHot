@@ -731,19 +731,33 @@ CrawlAllFromLastChrome(*) {
     courier := ""
     invoice := ""
 
-    if (selectedMarket = "네이버" && InStr(pageText, "배송조회")) {
-        trackingText := GetNaverTrackingPageText()
-
-        if (Trim(trackingText) != "") {
-            courier := ExtractCourier(trackingText)
-            invoice := ExtractInvoice(trackingText)
+    if (selectedMarket = "네이버" && IsNaverOrderPageText(pageText)) {
+        if (addressKey != "") {
+            m1_editExcelKeyword.Value := addressKey
         }
+
+        if TryOpenNaverTrackingByFind() {
+            trackingText := WaitForNaverTrackingPageText()
+
+            if IsNaverTrackingPageText(trackingText) {
+                courier := ExtractCourier(trackingText)
+                invoice := ExtractInvoice(trackingText)
+            }
+        }
+
+        if (invoice = "") {
+            SetStatus("주소 크롤링 완료 - 배송조회 화면에서 다시 통합 크롤링", "ok")
+            return
+        }
+    } else if (selectedMarket = "네이버" && IsNaverTrackingPageText(pageText)) {
+        courier := ExtractCourier(pageText)
+        invoice := ExtractInvoice(pageText)
     } else {
         courier := ExtractCourier(pageText)
         invoice := ExtractInvoice(pageText)
     }
 
-    if (selectedMarket = "네이버" && InStr(pageText, "배송조회") && invoice = "") {
+    if (selectedMarket = "네이버" && IsNaverTrackingPageText(pageText) && invoice = "") {
         SetStatus("네이버 배송조회 화면에서 송장번호를 찾지 못했습니다", "fail")
         return
     }
@@ -783,26 +797,8 @@ CrawlAllFromLastChrome(*) {
 }
 
 
-GetNaverTrackingPageText() {
-    if TryClickNaverTrackingButton() {
-        Sleep(1400)
-        trackingText := GetLastChromePageText()
-
-        if IsNaverTrackingPageText(trackingText) {
-            return trackingText
-        }
-    }
-
-    if TryActivateTrackingButtonByFind() {
-        Sleep(1400)
-        trackingText := GetLastChromePageText()
-
-        if IsNaverTrackingPageText(trackingText) {
-            return trackingText
-        }
-    }
-
-    return ""
+IsNaverOrderPageText(text) {
+    return InStr(text, "배송조회")
 }
 
 
@@ -823,6 +819,39 @@ IsNaverTrackingPageText(text) {
 }
 
 
+TryOpenNaverTrackingByFind() {
+    try {
+        Send("^f")
+        Sleep(45)
+        SendText("배송조회")
+        Sleep(90)
+        Send("{Esc}")
+        Sleep(45)
+        Send("{Enter}")
+        SetStatus("배송조회 진입 시도", "idle")
+
+        return true
+    } catch {
+        SetStatus("배송조회 진입 실패", "fail")
+        return false
+    }
+}
+
+
+WaitForNaverTrackingPageText() {
+    Loop 5 {
+        Sleep(A_Index = 1 ? 450 : 180)
+        text := GetLastChromePageText()
+
+        if IsNaverTrackingPageText(text) {
+            return text
+        }
+    }
+
+    return text
+}
+
+
 ; ───────────────────────────────────────────────────────────
 ;  CrawlFromLastChrome
 ;  ------------------------------------------------------------
@@ -835,66 +864,6 @@ CrawlFromLastChrome(*) {
 
 CrawlAddressFromLastChrome(*) {
     CrawlAllFromLastChrome()
-}
-
-
-TryClickNaverTrackingButton() {
-    script := "(()=>{const r=/\uBC30\uC1A1\uC870\uD68C/;let el=document.querySelector('button[data-nlog-click-code=trackDelivery]');if(!el){const items=[...document.querySelectorAll('button,a')];el=items.find(e=>r.test(e.innerText||e.textContent||''));}if(el){el.scrollIntoView({block:'center'});el.click();return true;}return false;})()"
-
-    try {
-        RunJavascriptInChrome(script)
-        SetStatus("배송조회 버튼 클릭 시도", "idle")
-        return true
-    } catch {
-        SetStatus("네이버 배송조회 버튼 클릭 실패", "fail")
-        return false
-    }
-}
-
-
-RunJavascriptInChrome(script) {
-    Send("^l")
-    Sleep(80)
-    SendText("javascript:void(" script ")")
-    Sleep(80)
-    Send("{Enter}")
-}
-
-
-TryActivateTrackingButtonByFind() {
-    savedClipboard := ""
-    success := false
-
-    try {
-        savedClipboard := ClipboardAll()
-    }
-
-    try {
-        A_Clipboard := "배송조회"
-        Send("^f")
-        Sleep(120)
-        Send("^v")
-        Sleep(200)
-        Send("{Esc}")
-        Sleep(120)
-        Send("{Enter}")
-        Sleep(200)
-        Send("{Space}")
-        SetStatus("배송조회 키보드 활성화 시도", "idle")
-
-        success := true
-    } catch {
-        SetStatus("배송조회 키보드 활성화 실패", "fail")
-        success := false
-    }
-
-    try {
-        if IsObject(savedClipboard) {
-            A_Clipboard := savedClipboard
-        }
-    }
-
-    return success
 }
 
 
@@ -1262,10 +1231,10 @@ TrackLastExcelWindow(*) {
 ;  검색 방식
 ;    - 부분 일치
 ;    - 대소문자 구분 없음
-;    - 검색어와 셀 값의 모든 공백을 제거한 뒤 비교
+;    - 주소 검색어의 핵심 토큰으로 후보를 좁힌 뒤 공백 제거 비교
 ; ───────────────────────────────────────────────────────────
 FindInLastExcel(*) {
-    global lastExcelHwnd, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
+    global lastExcelHwnd, m1_editNaverKeyword, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
 
     keyword := Trim(m1_editExcelKeyword.Value)
 
@@ -1321,6 +1290,17 @@ FindInLastExcel(*) {
             AddHistory(keyword, false)
             SetStatus("엑셀에서 찾지 못함: " keyword, "fail")
             return
+        }
+
+        matchedCells := GetUniqueRowMatches(matchedCells)
+
+        if (matchedCells.Length > 1) {
+            rowKeyword := Trim(m1_editNaverKeyword.Value)
+            filteredCells := FilterMatchesByRowKeyword(ws, matchedCells, rowKeyword)
+
+            if (filteredCells.Length > 0) {
+                matchedCells := filteredCells
+            }
         }
 
         found := matchedCells[1]
@@ -1483,16 +1463,54 @@ ComRetry(action, attempts := 10, delayMs := 150) {
 ; ───────────────────────────────────────────────────────────
 ;  GetAllSpaceInsensitiveMatches
 ;  ------------------------------------------------------------
-;  UsedRange 전체를 순회하며 검색어/셀 값의 공백을 모두 제거한 뒤 부분 일치 비교
+;  Range.Find로 후보 셀을 먼저 좁힌 뒤 검색어/셀 값의 공백을 모두 제거해 비교
 ; ───────────────────────────────────────────────────────────
 GetAllSpaceInsensitiveMatches(rng, keyword) {
     matches := []
     normalizedKeyword := NormalizeFindText(keyword)
+    seeds := GetExcelFindSeeds(keyword)
 
-    if (normalizedKeyword = "") {
+    if (normalizedKeyword = "" || seeds.Length = 0) {
         return matches
     }
 
+    seenCells := Map()
+
+    for seed in seeds {
+        found := ComRetry(() => rng.Find(seed, , -4163, 2, 1, 1, false))
+
+        if !found {
+            continue
+        }
+
+        candidates := GetAllFindMatches(rng, found)
+
+        for cell in candidates {
+            cellAddress := ComRetry(() => cell.Address(false, false))
+
+            if seenCells.Has(cellAddress) {
+                continue
+            }
+
+            seenCells[cellAddress] := true
+            normalizedValue := GetComparableCellText(cell)
+
+            if (normalizedValue != "" && InStr(normalizedValue, normalizedKeyword, false)) {
+                matches.Push(cell)
+            }
+        }
+
+        if (matches.Length > 0) {
+            return matches
+        }
+    }
+
+    return GetAllSpaceInsensitiveMatchesSlow(rng, normalizedKeyword)
+}
+
+
+GetAllSpaceInsensitiveMatchesSlow(rng, normalizedKeyword) {
+    matches := []
     rowCount := ComRetry(() => rng.Rows.Count)
     columnCount := ComRetry(() => rng.Columns.Count)
 
@@ -1511,6 +1529,117 @@ GetAllSpaceInsensitiveMatches(rng, keyword) {
     }
 
     return matches
+}
+
+
+GetUniqueRowMatches(matchedCells) {
+    rowSeen := Map()
+    uniqueCells := []
+
+    for cell in matchedCells {
+        row := cell.Row
+
+        if rowSeen.Has(row) {
+            continue
+        }
+
+        rowSeen[row] := true
+        uniqueCells.Push(cell)
+    }
+
+    return uniqueCells
+}
+
+
+FilterMatchesByRowKeyword(ws, matchedCells, rowKeyword) {
+    filtered := []
+    normalizedKeyword := NormalizeFindText(rowKeyword)
+
+    if (normalizedKeyword = "") {
+        return filtered
+    }
+
+    for cell in matchedCells {
+        rowText := GetComparableRowText(ws, cell.Row)
+
+        if (rowText != "" && InStr(rowText, normalizedKeyword, false)) {
+            filtered.Push(cell)
+        }
+    }
+
+    return filtered
+}
+
+
+GetComparableRowText(ws, row) {
+    try {
+        usedColumns := ws.UsedRange.Columns.Count
+    } catch {
+        usedColumns := 80
+    }
+
+    text := ""
+
+    Loop usedColumns {
+        cell := ComRetry(() => ws.Cells(row, A_Index))
+        text .= GetComparableCellText(cell)
+    }
+
+    return text
+}
+
+
+GetExcelFindSeeds(keyword) {
+    cleaned := RegExReplace(Trim(keyword), "\s+", " ")
+    parts := StrSplit(cleaned, " ")
+    seeds := []
+    seen := Map()
+
+    if (parts.Length >= 3 && !IsWeakFindSeed(parts[3])) {
+        AddFindSeed(seeds, seen, parts[3])
+    }
+
+    Loop parts.Length {
+        index := parts.Length - A_Index + 1
+        part := parts[index]
+
+        if (!IsWeakFindSeed(part)) {
+            AddFindSeed(seeds, seen, part)
+        }
+    }
+
+    if (seeds.Length = 0 && cleaned != "") {
+        AddFindSeed(seeds, seen, cleaned)
+    }
+
+    return seeds
+}
+
+
+AddFindSeed(seeds, seen, seed) {
+    seed := Trim(seed)
+
+    if (seed = "" || seen.Has(seed)) {
+        return
+    }
+
+    seen[seed] := true
+    seeds.Push(seed)
+}
+
+
+IsWeakFindSeed(seed) {
+    seed := Trim(seed)
+
+    if (seed = "") {
+        return true
+    }
+
+    if RegExMatch(seed, "^\d+$") {
+        return true
+    }
+
+    return StrLen(seed) < 2
 }
 
 
