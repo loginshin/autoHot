@@ -111,10 +111,7 @@ global m1_divider := myGui.AddText("x12 y174 w260 h1 Background0x313244", "")
 global m1_lblExcelTitle := myGui.AddText("x12 y190 w260 cWhite", "엑셀찾기")
 m1_lblExcelTitle.SetFont("s9 cWhite")
 
-global m1_lblExcelKeyword := myGui.AddText("x12 y216 w150 cGray", "엑셀에서 찾을 값")
-global m1_btnAddressCrawl := myGui.AddButton("x176 y212 w96 h22 Background0x45475A", "주소 크롤링")
-m1_btnAddressCrawl.SetFont("s8 cWhite")
-m1_btnAddressCrawl.OnEvent("Click", CrawlAddressFromLastChrome)
+global m1_lblExcelKeyword := myGui.AddText("x12 y216 w260 cGray", "엑셀에서 찾을 값")
 global m1_editExcelKeyword := myGui.AddEdit("x12 y236 w260 h24 Background0x313244 cWhite", "")
 
 global m1_lblCourier := myGui.AddText("x12 y266 w260 cGray", "택배사 B열")
@@ -129,9 +126,9 @@ global m1_btnCopyInvoice := myGui.AddButton("x228 y336 w44 h24 Background0x45475
 m1_btnCopyInvoice.SetFont("s8 cWhite")
 m1_btnCopyInvoice.OnEvent("Click", CopyInvoice)
 
-global m1_btnCrawl := myGui.AddButton("x12 y372 w92 h30 Background0x45475A", "송장 크롤링")
+global m1_btnCrawl := myGui.AddButton("x12 y372 w92 h30 Background0x45475A", "통합 크롤링")
 m1_btnCrawl.SetFont("s9 cWhite")
-m1_btnCrawl.OnEvent("Click", CrawlFromLastChrome)
+m1_btnCrawl.OnEvent("Click", CrawlAllFromLastChrome)
 
 global m1_btnFindExcel := myGui.AddButton("x110 y372 w82 h30 Background0x6C63FF", "엑셀찾기")
 m1_btnFindExcel.SetFont("s10 cWhite")
@@ -176,8 +173,8 @@ SetTimer(TrackLastExcelWindow, 300)
 SetTimer(TrackLastChromeWindow, 300)
 OnMessage(0x0100, ExcelEditEnter)
 Hotkey("#vkBF", OpenMarketSearch)
-Hotkey("#F2", CrawlAddressFromLastChrome)
-Hotkey("#F3", CrawlFromLastChrome)
+Hotkey("#F2", CrawlAllFromLastChrome)
+Hotkey("#F3", CrawlAllFromLastChrome)
 
 ; 시작 시 사용법 자동 표시
 ShowHelp()
@@ -325,7 +322,7 @@ ShowSettings(*) {
     sldOpacity := settingsGui.AddSlider("x16 y154 w240 Range80-255 ToolTip", windowOpacity)
     sldOpacity.OnEvent("Change", (*) => PreviewOpacity(sldOpacity, lblOpacityValue))
 
-    settingsGui.AddText("x16 y194 w240 cGray", "단축키: Win+/ 검색, Win+F2 주소, Win+F3 송장")
+    settingsGui.AddText("x16 y194 w240 cGray", "단축키: Win+/ 검색, Win+F2/F3 통합 크롤링")
 
     btnSave := settingsGui.AddButton("x16 y232 w76 h28 Background0x6C63FF", "저장")
     btnSave.SetFont("s9 cWhite")
@@ -466,8 +463,8 @@ ShowHelp(*) {
     helpGui.AddText("x70 y44 w226", "상단에서 쇼핑몰을 선택하고")
     helpGui.AddText("x70 y60 w226", "검색어 입력 후 검색 버튼을 누릅니다.")
     helpGui.AddText("x70 y76 w226", "네이버는 기존 구매내역 검색을 엽니다.")
-    helpGui.AddText("x70 y92 w226", "[주소 크롤링]은 엑셀 검색어를 채우고")
-    helpGui.AddText("x70 y108 w226", "[송장 크롤링]은 택배사/송장번호를 채웁니다.")
+    helpGui.AddText("x70 y92 w226", "[통합 크롤링]은 주소/택배사/")
+    helpGui.AddText("x70 y108 w226", "송장번호를 한 번에 채웁니다.")
 
     ; 엑셀
     helpGui.SetFont("s8 c0x6C63FF")
@@ -717,12 +714,12 @@ TrackLastChromeWindow(*) {
 
 
 ; ───────────────────────────────────────────────────────────
-;  CrawlFromLastChrome
+;  CrawlAllFromLastChrome
 ;  ------------------------------------------------------------
-;  최근 Chrome 페이지 텍스트에서 택배사/송장번호를 추출해 입력칸에 채움
+;  최근 Chrome 페이지 텍스트에서 주소/택배사/송장번호를 추출해 입력칸에 채움
 ; ───────────────────────────────────────────────────────────
-CrawlFromLastChrome(*) {
-    global m1_editCourier, m1_editInvoice
+CrawlAllFromLastChrome(*) {
+    global selectedMarket, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
 
     pageText := GetLastChromePageText()
 
@@ -730,12 +727,34 @@ CrawlFromLastChrome(*) {
         return
     }
 
-    courier := ExtractCourier(pageText)
-    invoice := ExtractInvoice(pageText)
+    addressKey := ExtractAddressSearchKey(pageText)
+    courier := ""
+    invoice := ""
 
-    if (courier = "" && invoice = "") {
-        SetStatus("택배사/송장번호를 찾지 못했습니다", "fail")
+    if (selectedMarket = "네이버" && InStr(pageText, "배송조회")) {
+        trackingText := GetNaverTrackingPageText()
+
+        if (Trim(trackingText) != "") {
+            courier := ExtractCourier(trackingText)
+            invoice := ExtractInvoice(trackingText)
+        }
+    } else {
+        courier := ExtractCourier(pageText)
+        invoice := ExtractInvoice(pageText)
+    }
+
+    if (selectedMarket = "네이버" && InStr(pageText, "배송조회") && invoice = "") {
+        SetStatus("네이버 배송조회 화면에서 송장번호를 찾지 못했습니다", "fail")
         return
+    }
+
+    if (addressKey = "" && courier = "" && invoice = "") {
+        SetStatus("주소/택배사/송장번호를 찾지 못했습니다", "fail")
+        return
+    }
+
+    if (addressKey != "") {
+        m1_editExcelKeyword.Value := addressKey
     }
 
     if (courier != "") {
@@ -748,41 +767,134 @@ CrawlFromLastChrome(*) {
 
     summary := ""
 
+    if (addressKey != "") {
+        summary .= addressKey
+    }
+
     if (courier != "") {
-        summary .= courier
+        summary .= (summary = "" ? "" : " / ") courier
     }
 
     if (invoice != "") {
         summary .= (summary = "" ? "" : " / ") invoice
     }
 
-    SetStatus("송장 크롤링 완료: " summary, "ok")
+    SetStatus("통합 크롤링 완료: " summary, "ok")
+}
+
+
+GetNaverTrackingPageText() {
+    if TryClickNaverTrackingButton() {
+        Sleep(1400)
+        trackingText := GetLastChromePageText()
+
+        if IsNaverTrackingPageText(trackingText) {
+            return trackingText
+        }
+    }
+
+    if TryActivateTrackingButtonByFind() {
+        Sleep(1400)
+        trackingText := GetLastChromePageText()
+
+        if IsNaverTrackingPageText(trackingText) {
+            return trackingText
+        }
+    }
+
+    return ""
+}
+
+
+IsNaverTrackingPageText(text) {
+    if (Trim(text) = "") {
+        return false
+    }
+
+    if InStr(text, "송장번호") {
+        return true
+    }
+
+    if InStr(text, "복사하기") && ExtractCourier(text) != "" {
+        return true
+    }
+
+    return ExtractInvoiceNearCourier(text) != ""
 }
 
 
 ; ───────────────────────────────────────────────────────────
-;  CrawlAddressFromLastChrome
+;  CrawlFromLastChrome
 ;  ------------------------------------------------------------
-;  최근 Chrome 페이지 텍스트에서 주소 검색 키만 추출해 엑셀 검색어 입력칸에 채움
+;  이전 단축키/핸들러 호환용
 ; ───────────────────────────────────────────────────────────
+CrawlFromLastChrome(*) {
+    CrawlAllFromLastChrome()
+}
+
+
 CrawlAddressFromLastChrome(*) {
-    global m1_editExcelKeyword
+    CrawlAllFromLastChrome()
+}
 
-    pageText := GetLastChromePageText()
 
-    if (Trim(pageText) = "") {
-        return
+TryClickNaverTrackingButton() {
+    script := "(()=>{const r=/\uBC30\uC1A1\uC870\uD68C/;let el=document.querySelector('button[data-nlog-click-code=trackDelivery]');if(!el){const items=[...document.querySelectorAll('button,a')];el=items.find(e=>r.test(e.innerText||e.textContent||''));}if(el){el.scrollIntoView({block:'center'});el.click();return true;}return false;})()"
+
+    try {
+        RunJavascriptInChrome(script)
+        SetStatus("배송조회 버튼 클릭 시도", "idle")
+        return true
+    } catch {
+        SetStatus("네이버 배송조회 버튼 클릭 실패", "fail")
+        return false
+    }
+}
+
+
+RunJavascriptInChrome(script) {
+    Send("^l")
+    Sleep(80)
+    SendText("javascript:void(" script ")")
+    Sleep(80)
+    Send("{Enter}")
+}
+
+
+TryActivateTrackingButtonByFind() {
+    savedClipboard := ""
+    success := false
+
+    try {
+        savedClipboard := ClipboardAll()
     }
 
-    addressKey := ExtractAddressSearchKey(pageText)
+    try {
+        A_Clipboard := "배송조회"
+        Send("^f")
+        Sleep(120)
+        Send("^v")
+        Sleep(200)
+        Send("{Esc}")
+        Sleep(120)
+        Send("{Enter}")
+        Sleep(200)
+        Send("{Space}")
+        SetStatus("배송조회 키보드 활성화 시도", "idle")
 
-    if (addressKey = "") {
-        SetStatus("주소를 찾지 못했습니다", "fail")
-        return
+        success := true
+    } catch {
+        SetStatus("배송조회 키보드 활성화 실패", "fail")
+        success := false
     }
 
-    m1_editExcelKeyword.Value := addressKey
-    SetStatus("주소 크롤링 완료: " addressKey, "ok")
+    try {
+        if IsObject(savedClipboard) {
+            A_Clipboard := savedClipboard
+        }
+    }
+
+    return success
 }
 
 
