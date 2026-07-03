@@ -176,8 +176,6 @@ Hotkey("#vkBF", OpenMarketSearch)
 Hotkey("#F2", CrawlAllFromLastChrome)
 Hotkey("#F3", CrawlAllFromLastChrome)
 
-; 시작 시 사용법 자동 표시
-ShowHelp()
 
 
 ; ════════════════════════════════════════════════════════════
@@ -1310,7 +1308,7 @@ FindInLastExcel(*) {
         found := matchedCells[1]
 
         if (matchedCells.Length > 1) {
-            ComRetry(() => xl.Goto(found, true))
+            ComRetryVoid(() => xl.Goto(found, true))
             SelectMatchedRows(ws, matchedCells)
 
             AddHistory(keyword, false)
@@ -1318,10 +1316,10 @@ FindInLastExcel(*) {
             return
         }
 
-        ComRetry(() => xl.Goto(found, true))
+        ComRetryVoid(() => xl.Goto(found, true))
 
         ; 찾은 셀은 상단에 보이게 유지하되, 좌우 스크롤은 A열부터 보이게 고정
-        ComRetry(() => SetScrollColumn(xl, 1))
+        ComRetryVoid(() => SetScrollColumn(xl, 1))
 
         foundRow := found.Row
 
@@ -1338,12 +1336,12 @@ FindInLastExcel(*) {
 
         ; B열 = 택배사
         if (courier != "") {
-            ComRetry(() => SetCellValue(ws, foundRow, 2, courier))
+            ComRetryVoid(() => SetCellValue(ws, foundRow, 2, courier))
         }
 
         ; C열 = 송장번호
         if (invoice != "") {
-            ComRetry(() => SetCellValue(ws, foundRow, 3, invoice))
+            ComRetryVoid(() => SetCellValue(ws, foundRow, 3, invoice))
         }
 
         AddHistory(keyword, true)
@@ -1449,8 +1447,28 @@ ComRetry(action, attempts := 10, delayMs := 150) {
 
     Loop attempts {
         try {
-            result := action.Call()
-            return IsSet(result) ? result : ""
+            return action.Call()
+        } catch as e {
+            lastError := e
+            Sleep(delayMs)
+        }
+    }
+
+    if IsObject(lastError) {
+        throw lastError
+    }
+
+    throw Error("COM 호출 실패")
+}
+
+
+ComRetryVoid(action, attempts := 10, delayMs := 150) {
+    lastError := ""
+
+    Loop attempts {
+        try {
+            action.Call()
+            return
         } catch as e {
             lastError := e
             Sleep(delayMs)
@@ -1468,46 +1486,13 @@ ComRetry(action, attempts := 10, delayMs := 150) {
 ; ───────────────────────────────────────────────────────────
 ;  GetAllSpaceInsensitiveMatches
 ;  ------------------------------------------------------------
-;  Range.Find로 후보 셀을 먼저 좁힌 뒤 검색어/셀 값의 공백을 모두 제거해 비교
+;  UsedRange를 직접 훑으며 검색어/셀 값의 공백을 모두 제거해 비교
 ; ───────────────────────────────────────────────────────────
 GetAllSpaceInsensitiveMatches(rng, keyword) {
-    matches := []
     normalizedKeyword := NormalizeFindText(keyword)
-    seeds := GetExcelFindSeeds(keyword)
 
-    if (normalizedKeyword = "" || seeds.Length = 0) {
-        return matches
-    }
-
-    seenCells := Map()
-
-    for seed in seeds {
-        found := ExcelFind(rng, seed)
-
-        if !found {
-            continue
-        }
-
-        candidates := GetAllFindMatches(rng, found)
-
-        for cell in candidates {
-            cellAddress := ComRetry(() => cell.Address(false, false))
-
-            if seenCells.Has(cellAddress) {
-                continue
-            }
-
-            seenCells[cellAddress] := true
-            normalizedValue := GetComparableCellText(cell)
-
-            if (normalizedValue != "" && InStr(normalizedValue, normalizedKeyword, false)) {
-                matches.Push(cell)
-            }
-        }
-
-        if (matches.Length > 0) {
-            return matches
-        }
+    if (normalizedKeyword = "") {
+        return []
     }
 
     return GetAllSpaceInsensitiveMatchesSlow(rng, normalizedKeyword)
@@ -1648,56 +1633,6 @@ IsWeakFindSeed(seed) {
 }
 
 
-; ───────────────────────────────────────────────────────────
-;  GetAllFindMatches
-;  ------------------------------------------------------------
-;  Range.Find로 찾은 첫 셀부터 FindNext를 반복해 전체 일치 셀 수집
-; ───────────────────────────────────────────────────────────
-GetAllFindMatches(rng, firstFound) {
-    matches := [firstFound]
-    firstAddress := firstFound.Address(false, false)
-    current := firstFound
-
-    Loop {
-        current := ExcelFindNext(rng, current)
-
-        if !current {
-            break
-        }
-
-        currentAddress := current.Address(false, false)
-
-        if (currentAddress = firstAddress) {
-            break
-        }
-
-        matches.Push(current)
-    }
-
-    return matches
-}
-
-
-; ───────────────────────────────────────────────────────────
-ExcelFind(rng, seed) {
-    try {
-        found := ComRetry(() => rng.Find(seed, , -4163, 2, 1, 1, false))
-        return IsSet(found) ? found : ""
-    } catch {
-        return ""
-    }
-}
-
-
-ExcelFindNext(rng, current) {
-    try {
-        found := ComRetry(() => rng.FindNext(current))
-        return IsSet(found) ? found : ""
-    } catch {
-        return ""
-    }
-}
-
 ;  SelectMatchedRows
 ;  ------------------------------------------------------------
 ;  검색어가 여러 셀에서 발견되면 입력을 막고 관련 행을 선택해 확인 가능하게 함
@@ -1718,7 +1653,7 @@ SelectMatchedRows(ws, matchedCells) {
     }
 
     if (rowAddress != "") {
-        ComRetry(() => ws.Range(rowAddress).Select())
+        ComRetryVoid(() => ws.Range(rowAddress).Select())
     }
 }
 
