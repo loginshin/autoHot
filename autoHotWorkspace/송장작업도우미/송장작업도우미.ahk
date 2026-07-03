@@ -1101,16 +1101,20 @@ ExtractAddressSearchKey(text) {
         address := text
     }
 
-    address := NormalizeAddressText(address)
+    address := RegExReplace(address, "<[^>]+>", " ")
+    address := RegExReplace(address, "^\s*(주소|배송지|도로명)\s*[:：]?\s*", "")
 
-    if (RegExMatch(address, "([가-힣0-9]+(?:대로|로|길))\s+(\d+(?:-\d+)?)", &match)) {
-        return match[1] " " match[2]
+    if RegExMatch(address, "\(\s*([가-힣]+동)\s*\)", &dongMatch) {
+        return dongMatch[1]
     }
+
+    address := NormalizeAddressText(address)
+    address := RegExReplace(address, "^\s*(주소|배송지|도로명)\s*[:：]?\s*", "")
 
     parts := StrSplit(address, " ")
 
-    if (parts.Length >= 4) {
-        return parts[3] " " parts[4]
+    if (parts.Length >= 3) {
+        return parts[3]
     }
 
     return ""
@@ -1445,7 +1449,8 @@ ComRetry(action, attempts := 10, delayMs := 150) {
 
     Loop attempts {
         try {
-            return action.Call()
+            result := action.Call()
+            return IsSet(result) ? result : ""
         } catch as e {
             lastError := e
             Sleep(delayMs)
@@ -1477,7 +1482,7 @@ GetAllSpaceInsensitiveMatches(rng, keyword) {
     seenCells := Map()
 
     for seed in seeds {
-        found := ComRetry(() => rng.Find(seed, , -4163, 2, 1, 1, false))
+        found := ExcelFind(rng, seed)
 
         if !found {
             continue
@@ -1654,7 +1659,7 @@ GetAllFindMatches(rng, firstFound) {
     current := firstFound
 
     Loop {
-        current := ComRetry(() => rng.FindNext(current))
+        current := ExcelFindNext(rng, current)
 
         if !current {
             break
@@ -1674,6 +1679,25 @@ GetAllFindMatches(rng, firstFound) {
 
 
 ; ───────────────────────────────────────────────────────────
+ExcelFind(rng, seed) {
+    try {
+        found := ComRetry(() => rng.Find(seed, , -4163, 2, 1, 1, false))
+        return IsSet(found) ? found : ""
+    } catch {
+        return ""
+    }
+}
+
+
+ExcelFindNext(rng, current) {
+    try {
+        found := ComRetry(() => rng.FindNext(current))
+        return IsSet(found) ? found : ""
+    } catch {
+        return ""
+    }
+}
+
 ;  SelectMatchedRows
 ;  ------------------------------------------------------------
 ;  검색어가 여러 셀에서 발견되면 입력을 막고 관련 행을 선택해 확인 가능하게 함
