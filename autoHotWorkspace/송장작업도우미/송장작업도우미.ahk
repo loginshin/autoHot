@@ -24,11 +24,12 @@
 ; ════════════════════════════════════════════════════════════
 
 global historyList := []
-global MAX_HISTORY := 20
+global MAX_HISTORY := 10
+global suppressClipboardHistory := false
 global statusColor := Map("ok", "0x2ECC71", "fail", "0xE74C3C", "idle", "0x95A5A6")
 global isPinned    := true
 global currentMode := 1
-global marketOptions := ["네이버", "11번가", "G마켓", "옥션", "쿠팡"]
+global marketOptions := ["네이버", "11번가", "G마켓", "옥션", "쿠팡", "Outlook"]
 global selectedMarket := marketOptions[1]
 global settingsFile := A_ScriptDir "\송장작업도우미.ini"
 global windowOpacity := 255
@@ -60,8 +61,9 @@ myGui.SetFont("s9 cWhite", "Segoe UI")
 
 myGui.AddText("x12 y14 cWhite", "⌨  자동화 도구")
 
-global lblMarketDisplay := myGui.AddText("x106 y13 w76 cGray", selectedMarket)
-lblMarketDisplay.SetFont("s8 cGray")
+global ddlMarketMain := myGui.AddDropDownList("x106 y9 w76 Background0x313244 cWhite Choose" GetMarketIndex(selectedMarket), marketOptions)
+ddlMarketMain.SetFont("s8 cWhite")
+ddlMarketMain.OnEvent("Change", ChangeMarket)
 
 global btnSettings := myGui.AddButton("x188 y8 w40 h24 Background0x6C63FF", "설정")
 btnSettings.SetFont("s8 cWhite")
@@ -92,7 +94,7 @@ m1_lblNaverTitle.SetFont("s9 cWhite")
 global m1_lblNaverKeyword := myGui.AddText("x12 y74 w260 cGray", "검색어")
 global m1_editNaverKeyword := myGui.AddEdit("x12 y94 w260 h24 Background0x313244 cWhite", "")
 
-global m1_btnNaver := myGui.AddButton("x12 y128 w260 h30 Default Background0x03C75A", "선택 쇼핑몰 검색")
+global m1_btnNaver := myGui.AddButton("x12 y128 w260 h30 Default Background0x03C75A", "선택 검색")
 m1_btnNaver.SetFont("s10 cWhite")
 m1_btnNaver.OnEvent("Click", OpenMarketSearch)
 
@@ -111,8 +113,10 @@ global m1_divider := myGui.AddText("x12 y174 w260 h1 Background0x313244", "")
 global m1_lblExcelTitle := myGui.AddText("x12 y190 w260 cWhite", "엑셀찾기")
 m1_lblExcelTitle.SetFont("s9 cWhite")
 
-global m1_lblExcelKeyword := myGui.AddText("x12 y216 w260 cGray", "엑셀에서 찾을 값")
-global m1_editExcelKeyword := myGui.AddEdit("x12 y236 w260 h24 Background0x313244 cWhite", "")
+global m1_lblExcelKeyword := myGui.AddText("x12 y216 w126 cGray", "엑셀에서 찾을 값 1")
+global m1_lblExcelKeyword2 := myGui.AddText("x146 y216 w126 cGray", "엑셀에서 찾을 값 2")
+global m1_editExcelKeyword := myGui.AddEdit("x12 y236 w126 h24 Background0x313244 cWhite", "")
+global m1_editExcelKeyword2 := myGui.AddEdit("x146 y236 w126 h24 Background0x313244 cWhite", "")
 
 global m1_lblCourier := myGui.AddText("x12 y266 w260 cGray", "택배사 B열")
 global m1_editCourier := myGui.AddEdit("x12 y286 w210 h24 Background0x313244 cWhite", "")
@@ -148,11 +152,11 @@ m1_lblExcelInfo.SetFont("s8")
 global m1_lblStatus := myGui.AddText("x12 y438 w260 h40", "대기 중")
 m1_lblStatus.SetFont("s9 c" statusColor["idle"])
 
-global m1_lblHistTitle := myGui.AddText("x12 y492 w260 cGray", "검색 히스토리  (더블클릭 → 복사)")
+global m1_lblHistTitle := myGui.AddText("x12 y492 w260 cGray", "클립보드 히스토리  (더블클릭 → 복사)")
 global m1_lbHistory := myGui.AddListBox("x12 y510 w260 h64 Background0x313244 cWhite -Border", [])
 m1_lbHistory.OnEvent("DoubleClick", CopyHistory)
 
-global m1_btnClear := myGui.AddButton("x12 y584 w260 h28 Background0x45475A", "히스토리 지우기")
+global m1_btnClear := myGui.AddButton("x12 y584 w260 h28 Background0x45475A", "클립보드 기록 지우기")
 m1_btnClear.SetFont("s9 cWhite")
 m1_btnClear.OnEvent("Click", ClearHistory)
 
@@ -172,6 +176,7 @@ ApplyMainWindowOpacity()
 SetTimer(TrackLastExcelWindow, 300)
 SetTimer(TrackLastChromeWindow, 300)
 OnMessage(0x0100, ExcelEditEnter)
+OnClipboardChange(TrackClipboardChange)
 Hotkey("#vkBF", OpenMarketSearch)
 Hotkey("#F2", CrawlAllFromLastChrome)
 Hotkey("#F3", CrawlAllFromLastChrome)
@@ -291,16 +296,16 @@ TogglePin(*) {
 ;  이후 쇼핑몰별 검색/크롤링 구현을 위한 선택값만 저장
 ; ───────────────────────────────────────────────────────────
 ChangeMarket(ctrl, *) {
-    global selectedMarket, marketOptions, lblMarketDisplay
+    global selectedMarket, marketOptions
 
     selectedMarket := marketOptions[ctrl.Value]
-    lblMarketDisplay.Text := selectedMarket
+    SaveSettings()
     SetStatus("선택 쇼핑몰: " selectedMarket, "idle")
 }
 
 
 ShowSettings(*) {
-    global myGui, isPinned, selectedMarket, marketOptions, windowOpacity
+    global myGui, isPinned, windowOpacity
 
     originalOpacity := windowOpacity
     settingsGui := Gui("+Owner" myGui.Hwnd " +AlwaysOnTop -MaximizeBox -MinimizeBox", "설정")
@@ -312,29 +317,26 @@ ShowSettings(*) {
     chkPinned := settingsGui.AddCheckBox("x16 y54 w220 h24 cWhite", "상단 고정")
     chkPinned.Value := isPinned ? 1 : 0
 
-    settingsGui.AddText("x16 y92 w96 cGray", "이커머스")
-    ddlSettingsMarket := settingsGui.AddDropDownList("x96 y88 w150 Background0x313244 cWhite Choose" GetMarketIndex(selectedMarket), marketOptions)
-
-    settingsGui.AddText("x16 y132 w96 cGray", "투명도")
-    lblOpacityValue := settingsGui.AddText("x216 y132 w40 cWhite", Round(windowOpacity / 255 * 100) "%")
-    sldOpacity := settingsGui.AddSlider("x16 y154 w240 Range80-255 ToolTip", windowOpacity)
+    settingsGui.AddText("x16 y92 w96 cGray", "투명도")
+    lblOpacityValue := settingsGui.AddText("x216 y92 w40 cWhite", Round(windowOpacity / 255 * 100) "%")
+    sldOpacity := settingsGui.AddSlider("x16 y114 w240 Range80-255 ToolTip", windowOpacity)
     sldOpacity.OnEvent("Change", (*) => PreviewOpacity(sldOpacity, lblOpacityValue))
 
-    settingsGui.AddText("x16 y194 w240 cGray", "단축키: Win+/ 검색, Win+F2/F3 통합 크롤링")
+    settingsGui.AddText("x16 y154 w240 cGray", "단축키: Win+/ 검색, Win+F2/F3 통합 크롤링")
 
-    btnSave := settingsGui.AddButton("x16 y232 w76 h28 Background0x6C63FF", "저장")
+    btnSave := settingsGui.AddButton("x16 y192 w76 h28 Background0x6C63FF", "저장")
     btnSave.SetFont("s9 cWhite")
-    btnSave.OnEvent("Click", (*) => SaveSettingsFromPopup(settingsGui, chkPinned, ddlSettingsMarket, sldOpacity))
+    btnSave.OnEvent("Click", (*) => SaveSettingsFromPopup(settingsGui, chkPinned, sldOpacity))
 
-    btnHelpPopup := settingsGui.AddButton("x100 y232 w76 h28 Background0x45475A", "도움")
+    btnHelpPopup := settingsGui.AddButton("x100 y192 w76 h28 Background0x45475A", "도움")
     btnHelpPopup.SetFont("s9 cWhite")
     btnHelpPopup.OnEvent("Click", ShowHelp)
 
-    btnCancel := settingsGui.AddButton("x184 y232 w76 h28 Background0x45475A", "취소")
+    btnCancel := settingsGui.AddButton("x184 y192 w76 h28 Background0x45475A", "취소")
     btnCancel.SetFont("s9 cWhite")
     btnCancel.OnEvent("Click", (*) => CancelSettingsPopup(settingsGui, originalOpacity))
 
-    settingsGui.Show("w276 h276")
+    settingsGui.Show("w276 h236")
 }
 
 
@@ -347,14 +349,11 @@ PreviewOpacity(slider, label) {
 }
 
 
-SaveSettingsFromPopup(settingsGui, chkPinned, ddlSettingsMarket, sldOpacity) {
-    global isPinned, selectedMarket, marketOptions, windowOpacity, lblMarketDisplay
+SaveSettingsFromPopup(settingsGui, chkPinned, sldOpacity) {
+    global isPinned, windowOpacity
 
     isPinned := chkPinned.Value = 1
-    selectedMarket := marketOptions[ddlSettingsMarket.Value]
     windowOpacity := sldOpacity.Value
-
-    lblMarketDisplay.Text := selectedMarket
     ApplyPinnedState()
     ApplyMainWindowOpacity()
     SaveSettings()
@@ -379,7 +378,7 @@ CancelSettingsPopup(settingsGui, originalOpacity) {
 ;  엑셀 관련 입력칸에서 Enter를 누르면 네이버 기본 버튼 대신 엑셀찾기 실행
 ; ───────────────────────────────────────────────────────────
 ExcelEditEnter(wParam, lParam, msg, hwnd) {
-    global m1_editExcelKeyword, m1_editCourier, m1_editInvoice
+    global m1_editExcelKeyword, m1_editExcelKeyword2, m1_editCourier, m1_editInvoice
 
     if (wParam != 13) {
         return
@@ -387,6 +386,7 @@ ExcelEditEnter(wParam, lParam, msg, hwnd) {
 
     if (
         hwnd = m1_editExcelKeyword.Hwnd
+        || hwnd = m1_editExcelKeyword2.Hwnd
         || hwnd = m1_editCourier.Hwnd
         || hwnd = m1_editInvoice.Hwnd
     ) {
@@ -402,10 +402,11 @@ ExcelEditEnter(wParam, lParam, msg, hwnd) {
 ;  네이버 검색어와 엑셀 입력값을 모두 비움
 ; ───────────────────────────────────────────────────────────
 ResetInputs(*) {
-    global m1_editNaverKeyword, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
+    global m1_editNaverKeyword, m1_editExcelKeyword, m1_editExcelKeyword2, m1_editCourier, m1_editInvoice
 
     m1_editNaverKeyword.Value := ""
     m1_editExcelKeyword.Value := ""
+    m1_editExcelKeyword2.Value := ""
     m1_editCourier.Value := ""
     m1_editInvoice.Value := ""
 
@@ -500,7 +501,7 @@ ShowHelp(*) {
 ; ───────────────────────────────────────────────────────────
 ;  CopyHistory
 ;  ------------------------------------------------------------
-;  히스토리 더블클릭 시 검색어 복사
+;  클립보드 히스토리 더블클릭 시 다시 복사
 ; ───────────────────────────────────────────────────────────
 CopyHistory(ctrl, *) {
     global historyList
@@ -510,18 +511,16 @@ CopyHistory(ctrl, *) {
     if (idx = 0)
         return
 
-    raw := historyList[idx]
-    pure := SubStr(raw, 3)
-
-    A_Clipboard := pure
-    SetStatus("복사됨: " pure, "ok")
+    value := historyList[idx]
+    A_Clipboard := value
+    SetStatus("복사됨: " FormatClipboardHistoryLabel(value), "ok")
 }
 
 
 ; ───────────────────────────────────────────────────────────
 ;  ClearHistory
 ;  ------------------------------------------------------------
-;  히스토리 초기화
+;  클립보드 히스토리 초기화
 ; ───────────────────────────────────────────────────────────
 ClearHistory(*) {
     global historyList, m1_lbHistory
@@ -529,7 +528,7 @@ ClearHistory(*) {
     historyList := []
     m1_lbHistory.Delete()
 
-    SetStatus("히스토리 삭제됨", "idle")
+    SetStatus("클립보드 기록 삭제됨", "idle")
 }
 
 
@@ -551,34 +550,69 @@ SetStatus(msg, state) {
 }
 
 
-; ───────────────────────────────────────────────────────────
-;  AddHistory
-;  ------------------------------------------------------------
-;  검색 히스토리 추가
-; ───────────────────────────────────────────────────────────
-AddHistory(keyword, found) {
-    global historyList, MAX_HISTORY, m1_lbHistory
+TrackClipboardChange(dataType) {
+    global suppressClipboardHistory
 
-    prefix := found ? "✓ " : "✗ "
-    entry  := prefix keyword
+    if (suppressClipboardHistory || dataType != 1) {
+        return
+    }
 
-    for i, v in historyList {
-        if (v = entry) {
+    AddClipboardHistory(A_Clipboard)
+}
+
+
+AddClipboardHistory(value) {
+    global historyList, MAX_HISTORY
+
+    value := Trim(value)
+
+    if (value = "") {
+        return
+    }
+
+    for i, oldValue in historyList {
+        if (oldValue = value) {
             historyList.RemoveAt(i)
             break
         }
     }
 
-    historyList.InsertAt(1, entry)
+    historyList.InsertAt(1, value)
 
-    if (historyList.Length > MAX_HISTORY)
+    while (historyList.Length > MAX_HISTORY) {
         historyList.Pop()
+    }
+
+    RefreshClipboardHistory()
+}
+
+
+RefreshClipboardHistory() {
+    global historyList, m1_lbHistory
 
     m1_lbHistory.Delete()
 
-    for v in historyList {
-        m1_lbHistory.Add([v])
+    for value in historyList {
+        m1_lbHistory.Add([FormatClipboardHistoryLabel(value)])
     }
+}
+
+
+FormatClipboardHistoryLabel(value) {
+    label := RegExReplace(value, "[\r\n\t]+", " ")
+    label := RegExReplace(label, "\s+", " ")
+    label := Trim(label)
+
+    if (StrLen(label) > 80) {
+        label := SubStr(label, 1, 80) "..."
+    }
+
+    return label
+}
+
+
+AddHistory(keyword, found) {
+    ; 검색 결과는 더 이상 리스트에 기록하지 않는다.
 }
 
 
@@ -593,12 +627,25 @@ AddHistory(keyword, found) {
 ;  선택한 쇼핑몰 기준으로 검색 URL 생성 후 실행
 ; ───────────────────────────────────────────────────────────
 OpenMarketSearch(*) {
-    global m1_editNaverKeyword, selectedMarket
+    global m1_editNaverKeyword, m1_editExcelKeyword2, selectedMarket
 
     keyword := Trim(m1_editNaverKeyword.Value)
 
     if (keyword = "") {
         SetStatus("검색어를 입력하세요", "fail")
+        return
+    }
+
+    m1_editExcelKeyword2.Value := keyword
+
+    if (selectedMarket = "Outlook") {
+        if SearchOutlook(keyword) {
+            AddHistory(keyword, true)
+            SetStatus("Outlook 검색: " keyword, "ok")
+        } else {
+            AddHistory(keyword, false)
+        }
+
         return
     }
 
@@ -614,6 +661,55 @@ OpenMarketSearch(*) {
     SetStatus(selectedMarket " 검색: " keyword, "ok")
 }
 
+
+SearchOutlook(keyword) {
+    try {
+        outlook := ComObjActive("Outlook.Application")
+    } catch {
+        try {
+            outlook := ComObject("Outlook.Application")
+        } catch {
+            SetStatus("Outlook 실행/연결 실패", "fail")
+            return false
+        }
+    }
+
+    try {
+        explorer := outlook.ActiveExplorer
+    } catch {
+        explorer := ""
+    }
+
+    if (!IsObject(explorer)) {
+        try {
+            inbox := outlook.Session.GetDefaultFolder(6)
+            inbox.Display()
+            Sleep(300)
+            explorer := outlook.ActiveExplorer
+        } catch {
+            SetStatus("Outlook 창 열기 실패", "fail")
+            return false
+        }
+    }
+
+    try {
+        explorer.Search(keyword, 1)
+        explorer.Activate()
+        return true
+    } catch {
+        try {
+            explorer.Activate()
+            Send("^e")
+            Sleep(100)
+            SendText(keyword)
+            Send("{Enter}")
+            return true
+        } catch {
+            SetStatus("Outlook 검색 실패", "fail")
+            return false
+        }
+    }
+}
 
 CreateMarketSearchUrl(market, keyword) {
     encodedKeyword := UrlEncode(keyword)
@@ -898,7 +994,10 @@ GetLastChromePageText() {
 
 
 CopyChromePageText() {
+    global suppressClipboardHistory
+
     savedClipboard := ""
+    suppressClipboardHistory := true
 
     try {
         savedClipboard := ClipboardAll()
@@ -918,6 +1017,8 @@ CopyChromePageText() {
             }
         }
 
+        Sleep(50)
+        suppressClipboardHistory := false
         return ""
     }
 
@@ -928,6 +1029,9 @@ CopyChromePageText() {
             A_Clipboard := savedClipboard
         }
     }
+
+    Sleep(50)
+    suppressClipboardHistory := false
 
     return pageText
 }
@@ -1236,9 +1340,12 @@ TrackLastExcelWindow(*) {
 ;    - 주소 검색어의 핵심 토큰으로 후보를 좁힌 뒤 공백 제거 비교
 ; ───────────────────────────────────────────────────────────
 FindInLastExcel(*) {
-    global lastExcelHwnd, m1_editNaverKeyword, m1_editExcelKeyword, m1_editCourier, m1_editInvoice
+    global lastExcelHwnd, m1_editNaverKeyword, m1_editExcelKeyword, m1_editExcelKeyword2, m1_editCourier, m1_editInvoice
 
-    keyword := Trim(m1_editExcelKeyword.Value)
+    keyword1 := Trim(m1_editExcelKeyword.Value)
+    keyword2 := Trim(m1_editExcelKeyword2.Value)
+    keyword := keyword1 != "" ? keyword1 : keyword2
+    extraKeyword := keyword1 != "" ? keyword2 : ""
 
     if (keyword = "") {
         SetStatus("엑셀 검색어를 입력하세요", "fail")
@@ -1286,7 +1393,7 @@ FindInLastExcel(*) {
         ws := ComRetry(() => xl.ActiveSheet)
         rng := ComRetry(() => ws.UsedRange)
 
-        matchedCells := GetAllSpaceInsensitiveMatches(rng, keyword)
+        matchedCells := GetUniqueRowMatches(GetAllSpaceInsensitiveMatches(rng, keyword))
 
         if (matchedCells.Length = 0) {
             AddHistory(keyword, false)
@@ -1294,14 +1401,38 @@ FindInLastExcel(*) {
             return
         }
 
-        matchedCells := GetUniqueRowMatches(matchedCells)
+        if (extraKeyword != "") {
+            extraCells := GetUniqueRowMatches(GetAllSpaceInsensitiveMatches(rng, extraKeyword))
 
-        if (matchedCells.Length > 1) {
-            rowKeyword := Trim(m1_editNaverKeyword.Value)
+            if (extraCells.Length = 0) {
+                AddHistory(keyword, false)
+                SetStatus("엑셀에서 두 번째 값을 찾지 못함: " extraKeyword, "fail")
+                return
+            }
+
+            matchedCells := IntersectMatchesByRow(matchedCells, extraCells)
+
+            if (matchedCells.Length = 0) {
+                AddHistory(keyword, false)
+                SetStatus("두 엑셀 검색값이 같은 행에 없습니다 - 입력 중단", "fail")
+                return
+            }
+        }
+
+        rowKeyword := Trim(m1_editNaverKeyword.Value)
+
+        if (rowKeyword != "") {
             filteredCells := FilterMatchesByRowKeyword(ws, matchedCells, rowKeyword)
 
             if (filteredCells.Length > 0) {
                 matchedCells := filteredCells
+            } else if (matchedCells.Length > 1) {
+                ComRetryVoid(() => xl.Goto(matchedCells[1], true))
+                SelectMatchedRows(ws, matchedCells)
+
+                AddHistory(keyword, false)
+                SetStatus("주소 후보는 여러 개지만 검색어가 같은 행에 없습니다 - 입력 중단", "fail")
+                return
             }
         }
 
@@ -1538,6 +1669,24 @@ GetUniqueRowMatches(matchedCells) {
     }
 
     return uniqueCells
+}
+
+
+IntersectMatchesByRow(primaryCells, secondaryCells) {
+    secondaryRows := Map()
+    intersected := []
+
+    for cell in secondaryCells {
+        secondaryRows[cell.Row] := true
+    }
+
+    for cell in primaryCells {
+        if secondaryRows.Has(cell.Row) {
+            intersected.Push(cell)
+        }
+    }
+
+    return intersected
 }
 
 
