@@ -33,6 +33,8 @@ global marketOptions := ["네이버", "11번가", "G마켓", "옥션", "쿠팡",
 global selectedMarket := marketOptions[1]
 global settingsFile := A_ScriptDir "\송장작업도우미.ini"
 global windowOpacity := 255
+global naverTrackingInitialDelay := 180
+global naverTrackingRetryDelay := 110
 
 LoadSettings()
 
@@ -178,7 +180,7 @@ SetTimer(TrackLastChromeWindow, 300)
 OnMessage(0x0100, ExcelEditEnter)
 OnClipboardChange(TrackClipboardChange)
 Hotkey("#vkBF", OpenMarketSearch)
-Hotkey("#F2", CrawlAllFromLastChrome)
+Hotkey("#F2", CrawlAddressFromLastChrome)
 Hotkey("#F3", CrawlAllFromLastChrome)
 
 
@@ -189,7 +191,7 @@ Hotkey("#F3", CrawlAllFromLastChrome)
 
 
 LoadSettings() {
-    global settingsFile, isPinned, selectedMarket, windowOpacity
+    global settingsFile, isPinned, selectedMarket, windowOpacity, naverTrackingInitialDelay, naverTrackingRetryDelay
 
     selectedMarket := IniRead(settingsFile, "Settings", "Market", selectedMarket)
 
@@ -199,15 +201,19 @@ LoadSettings() {
 
     isPinned := IniRead(settingsFile, "Settings", "AlwaysOnTop", isPinned ? "1" : "0") = "1"
     windowOpacity := ClampInteger(IniRead(settingsFile, "Settings", "Opacity", "255"), 80, 255)
+    naverTrackingInitialDelay := ClampInteger(IniRead(settingsFile, "Settings", "NaverTrackingInitialDelay", "180"), 50, 3000)
+    naverTrackingRetryDelay := ClampInteger(IniRead(settingsFile, "Settings", "NaverTrackingRetryDelay", "110"), 50, 3000)
 }
 
 
 SaveSettings() {
-    global settingsFile, isPinned, selectedMarket, windowOpacity
+    global settingsFile, isPinned, selectedMarket, windowOpacity, naverTrackingInitialDelay, naverTrackingRetryDelay
 
     IniWrite(selectedMarket, settingsFile, "Settings", "Market")
     IniWrite(isPinned ? "1" : "0", settingsFile, "Settings", "AlwaysOnTop")
     IniWrite(windowOpacity, settingsFile, "Settings", "Opacity")
+    IniWrite(naverTrackingInitialDelay, settingsFile, "Settings", "NaverTrackingInitialDelay")
+    IniWrite(naverTrackingRetryDelay, settingsFile, "Settings", "NaverTrackingRetryDelay")
 }
 
 
@@ -305,7 +311,7 @@ ChangeMarket(ctrl, *) {
 
 
 ShowSettings(*) {
-    global myGui, isPinned, windowOpacity
+    global myGui, isPinned, windowOpacity, naverTrackingInitialDelay, naverTrackingRetryDelay
 
     originalOpacity := windowOpacity
     settingsGui := Gui("+Owner" myGui.Hwnd " +AlwaysOnTop -MaximizeBox -MinimizeBox", "설정")
@@ -322,21 +328,27 @@ ShowSettings(*) {
     sldOpacity := settingsGui.AddSlider("x16 y114 w240 Range80-255 ToolTip", windowOpacity)
     sldOpacity.OnEvent("Change", (*) => PreviewOpacity(sldOpacity, lblOpacityValue))
 
-    settingsGui.AddText("x16 y154 w240 cGray", "단축키: Win+/ 검색, Win+F2/F3 통합 크롤링")
+    settingsGui.AddText("x16 y154 w240 cGray", "네이버 배송조회 대기(ms)")
+    settingsGui.AddText("x16 y178 w78 cWhite", "첫 대기")
+    edtNaverInitialDelay := settingsGui.AddEdit("x82 y174 w58 h24 Background0x313244 cWhite Number", naverTrackingInitialDelay)
+    settingsGui.AddText("x150 y178 w54 cWhite", "재시도")
+    edtNaverRetryDelay := settingsGui.AddEdit("x202 y174 w58 h24 Background0x313244 cWhite Number", naverTrackingRetryDelay)
 
-    btnSave := settingsGui.AddButton("x16 y192 w76 h28 Background0x6C63FF", "저장")
+    settingsGui.AddText("x16 y214 w240 cGray", "단축키: Win+/ 검색, Win+F2 주소, Win+F3 통합")
+
+    btnSave := settingsGui.AddButton("x16 y252 w76 h28 Background0x6C63FF", "저장")
     btnSave.SetFont("s9 cWhite")
-    btnSave.OnEvent("Click", (*) => SaveSettingsFromPopup(settingsGui, chkPinned, sldOpacity))
+    btnSave.OnEvent("Click", (*) => SaveSettingsFromPopup(settingsGui, chkPinned, sldOpacity, edtNaverInitialDelay, edtNaverRetryDelay))
 
-    btnHelpPopup := settingsGui.AddButton("x100 y192 w76 h28 Background0x45475A", "도움")
+    btnHelpPopup := settingsGui.AddButton("x100 y252 w76 h28 Background0x45475A", "도움")
     btnHelpPopup.SetFont("s9 cWhite")
     btnHelpPopup.OnEvent("Click", ShowHelp)
 
-    btnCancel := settingsGui.AddButton("x184 y192 w76 h28 Background0x45475A", "취소")
+    btnCancel := settingsGui.AddButton("x184 y252 w76 h28 Background0x45475A", "취소")
     btnCancel.SetFont("s9 cWhite")
     btnCancel.OnEvent("Click", (*) => CancelSettingsPopup(settingsGui, originalOpacity))
 
-    settingsGui.Show("w276 h236")
+    settingsGui.Show("w276 h296")
 }
 
 
@@ -349,11 +361,13 @@ PreviewOpacity(slider, label) {
 }
 
 
-SaveSettingsFromPopup(settingsGui, chkPinned, sldOpacity) {
-    global isPinned, windowOpacity
+SaveSettingsFromPopup(settingsGui, chkPinned, sldOpacity, edtNaverInitialDelay, edtNaverRetryDelay) {
+    global isPinned, windowOpacity, naverTrackingInitialDelay, naverTrackingRetryDelay
 
     isPinned := chkPinned.Value = 1
     windowOpacity := sldOpacity.Value
+    naverTrackingInitialDelay := ClampInteger(edtNaverInitialDelay.Value, 50, 3000)
+    naverTrackingRetryDelay := ClampInteger(edtNaverRetryDelay.Value, 50, 3000)
     ApplyPinnedState()
     ApplyMainWindowOpacity()
     SaveSettings()
@@ -916,11 +930,11 @@ IsNaverTrackingPageText(text) {
 TryOpenNaverTrackingByFind() {
     try {
         Send("^f")
-        Sleep(45)
+        Sleep(30)
         SendText("배송조회")
-        Sleep(90)
+        Sleep(55)
         Send("{Esc}")
-        Sleep(45)
+        Sleep(25)
         Send("{Enter}")
         SetStatus("배송조회 진입 시도", "idle")
 
@@ -933,9 +947,13 @@ TryOpenNaverTrackingByFind() {
 
 
 WaitForNaverTrackingPageText() {
-    Loop 5 {
-        Sleep(A_Index = 1 ? 450 : 180)
-        text := GetLastChromePageText()
+    global naverTrackingInitialDelay, naverTrackingRetryDelay
+
+    text := ""
+
+    Loop 6 {
+        Sleep(A_Index = 1 ? naverTrackingInitialDelay : naverTrackingRetryDelay)
+        text := CopyChromePageText()
 
         if IsNaverTrackingPageText(text) {
             return text
@@ -957,7 +975,23 @@ CrawlFromLastChrome(*) {
 
 
 CrawlAddressFromLastChrome(*) {
-    CrawlAllFromLastChrome()
+    global m1_editExcelKeyword
+
+    pageText := GetLastChromePageText()
+
+    if (Trim(pageText) = "") {
+        return
+    }
+
+    addressKey := ExtractAddressSearchKey(pageText)
+
+    if (addressKey = "") {
+        SetStatus("주소를 찾지 못했습니다", "fail")
+        return
+    }
+
+    m1_editExcelKeyword.Value := addressKey
+    SetStatus("주소 크롤링 완료: " addressKey, "ok")
 }
 
 
@@ -1005,19 +1039,19 @@ CopyChromePageText() {
 
     A_Clipboard := ""
     Send("{Esc}")
-    Sleep(80)
+    Sleep(40)
     Send("^a")
-    Sleep(120)
+    Sleep(70)
     Send("^c")
 
-    if (!ClipWait(2)) {
+    if (!ClipWait(1)) {
         try {
             if IsObject(savedClipboard) {
                 A_Clipboard := savedClipboard
             }
         }
 
-        Sleep(50)
+        Sleep(20)
         suppressClipboardHistory := false
         return ""
     }
@@ -1030,7 +1064,7 @@ CopyChromePageText() {
         }
     }
 
-    Sleep(50)
+    Sleep(20)
     suppressClipboardHistory := false
 
     return pageText
@@ -1197,35 +1231,59 @@ LooksLikeDate(number) {
 
 
 ExtractAddressSearchKey(text) {
+    global selectedMarket
+
     address := ExtractAddressText(text)
 
     if (address = "") {
+        if (selectedMarket = "네이버" || selectedMarket = "11번가") {
+            return ""
+        }
+
         address := text
     }
 
     address := RegExReplace(address, "<[^>]+>", " ")
     address := RegExReplace(address, "^\s*(주소|배송지|도로명)\s*[:：]?\s*", "")
 
-    if RegExMatch(address, "\(\s*([가-힣]+동)\s*\)", &dongMatch) {
-        return dongMatch[1]
-    }
-
     address := NormalizeAddressText(address)
     address := RegExReplace(address, "^\s*(주소|배송지|도로명)\s*[:：]?\s*", "")
 
-    parts := StrSplit(address, " ")
-
-    if (parts.Length >= 3) {
-        return parts[3]
-    }
-
-    return ""
+    return GetAddressPart(address, 3)
 }
 
 
 ExtractAddressText(text) {
+    global selectedMarket
+
+    if (selectedMarket = "11번가") {
+        if (RegExMatch(text, "is)<ol[^>]*class\s*=\s*[" Chr(34) "'][^" Chr(34) "']*step_detail_list[^" Chr(34) "']*[" Chr(34) "'][^>]*>.*?<dt[^>]*>\s*배송지\s*</dt>\s*<dd[^>]*>\s*([^<\r\n]+)", &elevenStreetAddressMatch)) {
+            return HtmlDecodeBasic(elevenStreetAddressMatch[1])
+        }
+
+        if (RegExMatch(text, "im)^\s*배송지\s*$\R\s*([^\r\n]+)", &elevenStreetTextAddressMatch)) {
+            return HtmlDecodeBasic(elevenStreetTextAddressMatch[1])
+        }
+
+        return ExtractCommerceAddressLine(text)
+    }
+
+    if (selectedMarket = "네이버") {
+        if (RegExMatch(text, "is)<div[^>]*DeliveryContent_area-address[^>]*>\s*<span[^>]*>\s*주소\s*</span>\s*([^<\r\n]+)", &naverHtmlAddressMatch)) {
+            return HtmlDecodeBasic(naverHtmlAddressMatch[1])
+        }
+
+        return ExtractNaverAddressLine(text)
+    }
+
     if (RegExMatch(text, "주소</span>\s*([^<\r\n]+)", &htmlMatch)) {
-        return htmlMatch[1]
+        return HtmlDecodeBasic(htmlMatch[1])
+    }
+
+    commerceAddress := ExtractCommerceAddressLine(text)
+
+    if (commerceAddress != "") {
+        return commerceAddress
     }
 
     normalized := StrReplace(text, "`r`n", "`n")
@@ -1254,7 +1312,76 @@ ExtractAddressText(text) {
 }
 
 
+ExtractCommerceAddressLine(text) {
+    normalized := StrReplace(text, "`r`n", "`n")
+    normalized := StrReplace(normalized, "`r", "`n")
+    lines := StrSplit(normalized, "`n")
+
+    for line in lines {
+        line := Trim(HtmlDecodeBasic(line))
+
+        if (line = "" || IsDeliveryTrackingLine(line)) {
+            continue
+        }
+
+        if IsKoreanAddressLine(line) {
+            return CleanCommerceAddressSuffix(line)
+        }
+    }
+
+    return ""
+}
+
+
+IsKoreanAddressLine(line) {
+    if RegExMatch(line, "^(서울특별시|서울시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|강원도|충청북도|충북|충청남도|충남|전라북도|전북|전라남도|전남|경상북도|경북|경상남도|경남|제주특별자치도|제주도)\s+") {
+        return true
+    }
+
+    return RegExMatch(line, "[가-힣0-9]+(?:대로|로|길)\s+\d")
+}
+
+
+IsDeliveryTrackingLine(line) {
+    return ExtractCourier(line) != "" && ExtractInvoiceNearCourier(line) != ""
+}
+
+
+CleanCommerceAddressSuffix(address) {
+    address := RegExReplace(address, "\s*/\s*[가-힣A-Za-z0-9\s]+$", "")
+    address := RegExReplace(address, "\s+(CJ대한통운|대한통운|한진택배|롯데택배|우체국택배|우체국|로젠택배|로젠|경동택배|대신택배|일양로지스|합동택배|천일택배|건영택배|쿠팡로지스틱스|DHL|FedEx|UPS|EMS).*$", "")
+    address := RegExReplace(address, "\b\d{2,3}-\d{3,4}-\d{4}\b.*$", "")
+
+    return Trim(address)
+}
+
+
+ExtractNaverAddressLine(text) {
+    normalized := StrReplace(text, "`r`n", "`n")
+    normalized := StrReplace(normalized, "`r", "`n")
+    lines := StrSplit(normalized, "`n")
+
+    for line in lines {
+        line := Trim(line)
+
+        if (RegExMatch(line, "주소\s*([가-힣][^\r\n]*)", &addressMatch)) {
+            return CleanNaverAddressSuffix(HtmlDecodeBasic(addressMatch[1]))
+        }
+    }
+
+    return ""
+}
+
+
+CleanNaverAddressSuffix(address) {
+    address := RegExReplace(address, "\s+(서류|배송메모|요청사항|공동현관|연락처).*$", "")
+
+    return Trim(address)
+}
+
+
 NormalizeAddressText(address) {
+    address := HtmlDecodeBasic(address)
     address := RegExReplace(address, "<[^>]+>", " ")
     address := RegExReplace(address, "\([^)]*\)", " ")
     address := RegExReplace(address, "\[[^\]]*\]", " ")
@@ -1263,6 +1390,30 @@ NormalizeAddressText(address) {
     address := RegExReplace(address, "\s+", " ")
 
     return Trim(address)
+}
+
+
+GetAddressPart(address, index) {
+    parts := StrSplit(address, " ")
+
+    if (parts.Length >= index && parts[index] != "") {
+        return parts[index]
+    }
+
+    return address
+}
+
+
+HtmlDecodeBasic(text) {
+    text := StrReplace(text, "&nbsp;", " ")
+    text := StrReplace(text, "&#160;", " ")
+    text := StrReplace(text, "&amp;", "&")
+    text := StrReplace(text, "&lt;", "<")
+    text := StrReplace(text, "&gt;", ">")
+    text := StrReplace(text, "&quot;", Chr(34))
+    text := StrReplace(text, "&#39;", Chr(39))
+
+    return Trim(text)
 }
 
 ; ───────────────────────────────────────────────────────────
@@ -1397,26 +1548,23 @@ FindInLastExcel(*) {
 
         if (matchedCells.Length = 0) {
             AddHistory(keyword, false)
-            SetStatus("엑셀에서 찾지 못함: " keyword, "fail")
+            sheetName := ComRetry(() => ws.Name)
+            rowCount := ComRetry(() => rng.Rows.Count)
+            columnCount := ComRetry(() => rng.Columns.Count)
+            SetStatus("엑셀에서 찾지 못함: " keyword " / " sheetName " " rowCount "x" columnCount, "fail")
             return
         }
 
         if (extraKeyword != "") {
-            extraCells := GetUniqueRowMatches(GetAllSpaceInsensitiveMatches(rng, extraKeyword))
+            extraCells := FilterMatchesByRowKeyword(ws, matchedCells, extraKeyword)
 
             if (extraCells.Length = 0) {
-                AddHistory(keyword, false)
-                SetStatus("엑셀에서 두 번째 값을 찾지 못함: " extraKeyword, "fail")
-                return
-            }
-
-            matchedCells := IntersectMatchesByRow(matchedCells, extraCells)
-
-            if (matchedCells.Length = 0) {
                 AddHistory(keyword, false)
                 SetStatus("두 엑셀 검색값이 같은 행에 없습니다 - 입력 중단", "fail")
                 return
             }
+
+            matchedCells := extraCells
         }
 
         rowKeyword := Trim(m1_editNaverKeyword.Value)
@@ -1536,7 +1684,15 @@ IsExcelCellBlank(ws, row, column) {
 
 NormalizeFindText(value) {
     try {
-        text := "" value
+        if IsObject(value) {
+            try {
+                text := "" value.Value
+            } catch {
+                return ""
+            }
+        } else {
+            text := "" value
+        }
     } catch {
         return ""
     }
@@ -1549,6 +1705,16 @@ NormalizeFindText(value) {
 
 GetComparableCellText(cell) {
     normalizedValue := ""
+
+    try {
+        normalizedValue := NormalizeFindText(cell.Value)
+    } catch {
+        normalizedValue := ""
+    }
+
+    if (normalizedValue != "") {
+        return normalizedValue
+    }
 
     try {
         normalizedValue := NormalizeFindText(cell.Value2)
@@ -1626,7 +1792,56 @@ GetAllSpaceInsensitiveMatches(rng, keyword) {
         return []
     }
 
+    fastMatches := GetAllSpaceInsensitiveMatchesFast(rng, normalizedKeyword)
+
+    if IsObject(fastMatches) {
+        return fastMatches
+    }
+
     return GetAllSpaceInsensitiveMatchesSlow(rng, normalizedKeyword)
+}
+
+
+GetAllSpaceInsensitiveMatchesFast(rng, normalizedKeyword) {
+    matches := []
+
+    try {
+        rowCount := ComRetry(() => rng.Rows.Count)
+        columnCount := ComRetry(() => rng.Columns.Count)
+        values := ComRetry(() => rng.Value)
+    } catch {
+        return false
+    }
+
+    if (rowCount = 1 && columnCount = 1) {
+        normalizedValue := NormalizeFindText(values)
+
+        if (normalizedValue != "" && InStr(normalizedValue, normalizedKeyword, false)) {
+            matches.Push(ComRetry(() => rng.Cells(1, 1)))
+        }
+
+        return matches
+    }
+
+    Loop rowCount {
+        rowIndex := A_Index
+
+        Loop columnCount {
+            columnIndex := A_Index
+
+            try {
+                normalizedValue := NormalizeFindText(values[rowIndex, columnIndex])
+            } catch {
+                return false
+            }
+
+            if (normalizedValue != "" && InStr(normalizedValue, normalizedKeyword, false)) {
+                matches.Push(ComRetry(() => rng.Cells(rowIndex, columnIndex)))
+            }
+        }
+    }
+
+    return matches
 }
 
 
@@ -1693,13 +1908,21 @@ IntersectMatchesByRow(primaryCells, secondaryCells) {
 FilterMatchesByRowKeyword(ws, matchedCells, rowKeyword) {
     filtered := []
     normalizedKeyword := NormalizeFindText(rowKeyword)
+    rowTextCache := Map()
 
     if (normalizedKeyword = "") {
         return filtered
     }
 
     for cell in matchedCells {
-        rowText := GetComparableRowText(ws, cell.Row)
+        row := cell.Row
+
+        if rowTextCache.Has(row) {
+            rowText := rowTextCache[row]
+        } else {
+            rowText := GetComparableRowText(ws, row)
+            rowTextCache[row] := rowText
+        }
 
         if (rowText != "" && InStr(rowText, normalizedKeyword, false)) {
             filtered.Push(cell)
