@@ -25,6 +25,7 @@
 
 global historyList := []
 global MAX_HISTORY := 10
+global naverBulkResults := []
 global suppressClipboardHistory := false
 global statusColor := Map("ok", "0x2ECC71", "fail", "0xE74C3C", "idle", "0x95A5A6")
 global isPinned    := true
@@ -33,8 +34,8 @@ global marketOptions := ["네이버", "11번가", "G마켓", "옥션", "쿠팡",
 global selectedMarket := marketOptions[1]
 global settingsFile := A_ScriptDir "\송장작업도우미.ini"
 global windowOpacity := 255
-global naverTrackingInitialDelay := 180
-global naverTrackingRetryDelay := 110
+global naverTrackingInitialDelay := 430
+global naverTrackingRetryDelay := 230
 
 LoadSettings()
 
@@ -112,53 +113,79 @@ global m1_divider := myGui.AddText("x12 y174 w260 h1 Background0x313244", "")
 ;  입력칸에 검색어를 넣고 [엑셀찾기] 버튼으로 검색
 ; ───────────────────────────────────────────────────────────
 
-global m1_lblExcelTitle := myGui.AddText("x12 y190 w260 cWhite", "엑셀찾기")
+global m1_lblExcelTitle := myGui.AddText("x12 y190 w260 cWhite Hidden", "엑셀찾기")
 m1_lblExcelTitle.SetFont("s9 cWhite")
 
-global m1_lblExcelKeyword := myGui.AddText("x12 y216 w126 cGray", "엑셀에서 찾을 값 1")
-global m1_lblExcelKeyword2 := myGui.AddText("x146 y216 w126 cGray", "엑셀에서 찾을 값 2")
-global m1_editExcelKeyword := myGui.AddEdit("x12 y236 w126 h24 Background0x313244 cWhite", "")
-global m1_editExcelKeyword2 := myGui.AddEdit("x146 y236 w126 h24 Background0x313244 cWhite", "")
+global m1_lblExcelKeyword := myGui.AddText("x12 y216 w126 cGray Hidden", "엑셀에서 찾을 값 1")
+global m1_lblExcelKeyword2 := myGui.AddText("x146 y216 w126 cGray Hidden", "엑셀에서 찾을 값 2")
+global m1_editExcelKeyword := myGui.AddEdit("x12 y236 w126 h24 Background0x313244 cWhite Hidden", "")
+global m1_editExcelKeyword2 := myGui.AddEdit("x146 y236 w126 h24 Background0x313244 cWhite Hidden", "")
 
-global m1_lblCourier := myGui.AddText("x12 y266 w260 cGray", "택배사 B열")
-global m1_editCourier := myGui.AddEdit("x12 y286 w210 h24 Background0x313244 cWhite", "")
-global m1_btnCopyCourier := myGui.AddButton("x228 y286 w44 h24 Background0x45475A", "복사")
+global m1_lblCourier := myGui.AddText("x12 y266 w260 cGray Hidden", "택배사 B열")
+global m1_editCourier := myGui.AddEdit("x12 y286 w210 h24 Background0x313244 cWhite Hidden", "")
+global m1_btnCopyCourier := myGui.AddButton("x228 y286 w44 h24 Background0x45475A Hidden", "복사")
 m1_btnCopyCourier.SetFont("s8 cWhite")
 m1_btnCopyCourier.OnEvent("Click", CopyCourier)
 
-global m1_lblInvoice := myGui.AddText("x12 y316 w260 cGray", "송장번호 C열")
-global m1_editInvoice := myGui.AddEdit("x12 y336 w210 h24 Background0x313244 cWhite", "")
-global m1_btnCopyInvoice := myGui.AddButton("x228 y336 w44 h24 Background0x45475A", "복사")
+global m1_lblInvoice := myGui.AddText("x12 y316 w260 cGray Hidden", "송장번호 C열")
+global m1_editInvoice := myGui.AddEdit("x12 y336 w210 h24 Background0x313244 cWhite Hidden", "")
+global m1_btnCopyInvoice := myGui.AddButton("x228 y336 w44 h24 Background0x45475A Hidden", "복사")
 m1_btnCopyInvoice.SetFont("s8 cWhite")
 m1_btnCopyInvoice.OnEvent("Click", CopyInvoice)
 
-global m1_btnCrawl := myGui.AddButton("x12 y372 w92 h30 Background0x45475A", "통합 크롤링")
+global m1_btnCrawl := myGui.AddButton("x12 y372 w92 h30 Background0x45475A Hidden", "통합 크롤링")
 m1_btnCrawl.SetFont("s9 cWhite")
 m1_btnCrawl.OnEvent("Click", CrawlAllFromLastChrome)
 
-global m1_btnFindExcel := myGui.AddButton("x110 y372 w82 h30 Background0x6C63FF", "엑셀찾기")
+global m1_btnFindExcel := myGui.AddButton("x110 y372 w82 h30 Background0x6C63FF Hidden", "엑셀찾기")
 m1_btnFindExcel.SetFont("s10 cWhite")
 m1_btnFindExcel.OnEvent("Click", FindInLastExcel)
 
-global m1_btnResetInputs := myGui.AddButton("x198 y372 w74 h30 Background0x45475A", "초기화")
+global m1_btnResetInputs := myGui.AddButton("x198 y372 w74 h30 Background0x45475A Hidden", "초기화")
 m1_btnResetInputs.SetFont("s9 cWhite")
 m1_btnResetInputs.OnEvent("Click", ResetInputs)
 
-global m1_lblExcelInfo := myGui.AddText("x12 y414 w260 h18 cGray", "중복 발견 시 입력하지 않습니다.")
+global m1_lblExcelInfo := myGui.AddText("x12 y414 w260 h18 cGray Hidden", "중복 발견 시 입력하지 않습니다.")
 m1_lblExcelInfo.SetFont("s8")
 
 ; ───────────────────────────────────────────────────────────
-;  Mode 1-C. 상태 / 히스토리
+;  Mode 1-C. 차세대 크롤링: 네이버 주문 목록 일괄 추출
 ; ───────────────────────────────────────────────────────────
 
-global m1_lblStatus := myGui.AddText("x12 y438 w260 h40", "대기 중")
+global m1_lblBulkTitle := myGui.AddText("x12 y190 w260 cWhite", "크롤링 결과 리스트")
+m1_lblBulkTitle.SetFont("s9 cWhite")
+
+global m1_btnNaverBulkCrawl := myGui.AddButton("x12 y214 w62 h28 Background0x03C75A", "크롤링")
+m1_btnNaverBulkCrawl.SetFont("s8 cWhite")
+m1_btnNaverBulkCrawl.OnEvent("Click", CrawlNaverOrderListFromLastChrome)
+
+global m1_btnCopyBulkRow := myGui.AddButton("x80 y214 w62 h28 Background0x45475A", "선택복사")
+m1_btnCopyBulkRow.SetFont("s8 cWhite")
+m1_btnCopyBulkRow.OnEvent("Click", CopySelectedNaverBulkResult)
+
+global m1_btnCopyBulkAll := myGui.AddButton("x148 y214 w62 h28 Background0x45475A", "전체복사")
+m1_btnCopyBulkAll.SetFont("s8 cWhite")
+m1_btnCopyBulkAll.OnEvent("Click", CopyAllNaverBulkResults)
+
+global m1_btnWriteBulkExcel := myGui.AddButton("x216 y214 w56 h28 Background0x6C63FF", "엑셀입력")
+m1_btnWriteBulkExcel.SetFont("s8 cWhite")
+m1_btnWriteBulkExcel.OnEvent("Click", WriteNaverBulkResultsToExcel)
+
+global m1_lbNaverBulkResults := myGui.AddListBox("x12 y250 w260 h240 Background0x313244 cWhite -Border", [])
+m1_lbNaverBulkResults.OnEvent("DoubleClick", CopySelectedNaverBulkResult)
+
+; ───────────────────────────────────────────────────────────
+;  Mode 1-D. 상태 / 히스토리
+; ───────────────────────────────────────────────────────────
+
+global m1_lblStatus := myGui.AddText("x12 y502 w260 h40", "대기 중")
 m1_lblStatus.SetFont("s9 c" statusColor["idle"])
 
-global m1_lblHistTitle := myGui.AddText("x12 y492 w260 cGray", "클립보드 히스토리  (더블클릭 → 복사)")
-global m1_lbHistory := myGui.AddListBox("x12 y510 w260 h64 Background0x313244 cWhite -Border", [])
+global m1_lblHistTitle := myGui.AddText("x12 y556 w260 cGray", "클립보드 히스토리  (더블클릭 → 복사)")
+global m1_lbHistory := myGui.AddListBox("x12 y574 w260 h64 Background0x313244 cWhite -Border", [])
 m1_lbHistory.OnEvent("DoubleClick", CopyHistory)
 
-global m1_btnClear := myGui.AddButton("x12 y584 w260 h28 Background0x45475A", "클립보드 기록 지우기")
+global m1_btnClear := myGui.AddButton("x12 y648 w260 h28 Background0x45475A", "클립보드 기록 지우기")
 m1_btnClear.SetFont("s9 cWhite")
 m1_btnClear.OnEvent("Click", ClearHistory)
 
@@ -169,7 +196,7 @@ m1_btnClear.OnEvent("Click", ClearHistory)
 myGui.OnEvent("Close", (*) => ExitApp())
 
 xPos := A_ScreenWidth - 310
-myGui.Show("w284 h632 x" xPos " y40")
+myGui.Show("w284 h696 x" xPos " y40")
 ApplyMainWindowOpacity()
 
 ; Excel 창 추적 타이머
@@ -182,6 +209,8 @@ OnClipboardChange(TrackClipboardChange)
 Hotkey("#vkBF", OpenMarketSearch)
 Hotkey("#F2", CrawlAddressFromLastChrome)
 Hotkey("#F3", CrawlAllFromLastChrome)
+Hotkey("#F4", CrawlNaverOrderListFromLastChrome)
+Hotkey("#F5", WriteNaverBulkResultsToExcel)
 
 
 
@@ -201,8 +230,8 @@ LoadSettings() {
 
     isPinned := IniRead(settingsFile, "Settings", "AlwaysOnTop", isPinned ? "1" : "0") = "1"
     windowOpacity := ClampInteger(IniRead(settingsFile, "Settings", "Opacity", "255"), 80, 255)
-    naverTrackingInitialDelay := ClampInteger(IniRead(settingsFile, "Settings", "NaverTrackingInitialDelay", "180"), 50, 3000)
-    naverTrackingRetryDelay := ClampInteger(IniRead(settingsFile, "Settings", "NaverTrackingRetryDelay", "110"), 50, 3000)
+    naverTrackingInitialDelay := ClampInteger(IniRead(settingsFile, "Settings", "NaverTrackingInitialDelay", "430"), 50, 3000)
+    naverTrackingRetryDelay := ClampInteger(IniRead(settingsFile, "Settings", "NaverTrackingRetryDelay", "230"), 50, 3000)
 }
 
 
@@ -328,13 +357,13 @@ ShowSettings(*) {
     sldOpacity := settingsGui.AddSlider("x16 y114 w240 Range80-255 ToolTip", windowOpacity)
     sldOpacity.OnEvent("Change", (*) => PreviewOpacity(sldOpacity, lblOpacityValue))
 
-    settingsGui.AddText("x16 y154 w240 cGray", "네이버 배송조회 대기(ms)")
+    settingsGui.AddText("x16 y154 w240 cGray", "네이버 배송조회 대기(ms) 추천 430 / 230")
     settingsGui.AddText("x16 y178 w78 cWhite", "첫 대기")
     edtNaverInitialDelay := settingsGui.AddEdit("x82 y174 w58 h24 Background0x313244 cWhite Number", naverTrackingInitialDelay)
     settingsGui.AddText("x150 y178 w54 cWhite", "재시도")
     edtNaverRetryDelay := settingsGui.AddEdit("x202 y174 w58 h24 Background0x313244 cWhite Number", naverTrackingRetryDelay)
 
-    settingsGui.AddText("x16 y214 w240 cGray", "단축키: Win+/ 검색, Win+F2 주소, Win+F3 통합")
+    settingsGui.AddText("x16 y214 w240 cGray", "단축키: Win+/ 검색, Win+F4 목록, Win+F5 엑셀입력")
 
     btnSave := settingsGui.AddButton("x16 y252 w76 h28 Background0x6C63FF", "저장")
     btnSave.SetFont("s9 cWhite")
@@ -965,6 +994,279 @@ WaitForNaverTrackingPageText() {
 
 
 ; ───────────────────────────────────────────────────────────
+;  CrawlNaverOrderListFromLastChrome
+;  ------------------------------------------------------------
+;  네이버 주문 목록 화면에서 송장번호가 있는 주문 후보를 일괄 추출해 리스트업
+; ───────────────────────────────────────────────────────────
+CrawlNaverOrderListFromLastChrome(*) {
+    global naverBulkResults
+
+    pageText := GetLastChromePageText()
+
+    if (Trim(pageText) = "") {
+        return
+    }
+
+    naverBulkResults := ExtractNaverOrderListItems(pageText)
+    RenderNaverBulkResults()
+
+    if (naverBulkResults.Length = 0) {
+        SetStatus("네이버 목록에서 송장 후보를 찾지 못했습니다", "fail")
+        return
+    }
+
+    missingAddressCount := 0
+
+    for item in naverBulkResults {
+        if (item.addressKey = "") {
+            missingAddressCount += 1
+        }
+    }
+
+    status := "네이버 목록 크롤링 완료: " naverBulkResults.Length "건"
+
+    if (missingAddressCount > 0) {
+        status .= " / 주소확인필요 " missingAddressCount "건"
+    }
+
+    SetStatus(status, "ok")
+}
+
+
+RenderNaverBulkResults() {
+    global naverBulkResults, m1_lbNaverBulkResults
+
+    m1_lbNaverBulkResults.Delete()
+
+    for item in naverBulkResults {
+        m1_lbNaverBulkResults.Add([FormatNaverBulkResultLabel(item)])
+    }
+}
+
+
+FormatNaverBulkResultLabel(item) {
+    addressLabel := item.addressKey != "" ? item.addressKey : "주소?"
+    courierLabel := item.courier != "" ? item.courier : "택배?"
+
+    return addressLabel " | " courierLabel " | " item.invoice
+}
+
+
+CopySelectedNaverBulkResult(*) {
+    global naverBulkResults, m1_lbNaverBulkResults
+
+    index := m1_lbNaverBulkResults.Value
+
+    if (index = 0 || index > naverBulkResults.Length) {
+        SetStatus("복사할 네이버 목록 항목을 선택하세요", "fail")
+        return
+    }
+
+    A_Clipboard := BuildNaverBulkClipboardText(naverBulkResults[index])
+    SetStatus("선택 항목 복사 완료", "ok")
+}
+
+
+CopyAllNaverBulkResults(*) {
+    global naverBulkResults
+
+    if (naverBulkResults.Length = 0) {
+        SetStatus("복사할 네이버 목록 결과가 없습니다", "fail")
+        return
+    }
+
+    text := "주소키`t주소`t택배사`t송장번호"
+
+    for item in naverBulkResults {
+        text .= "`r`n" BuildNaverBulkClipboardText(item)
+    }
+
+    A_Clipboard := text
+    SetStatus("네이버 목록 전체 복사 완료: " naverBulkResults.Length "건", "ok")
+}
+
+
+WriteNaverBulkResultsToExcel(*) {
+    global naverBulkResults
+    global m1_editNaverKeyword, m1_editExcelKeyword, m1_editExcelKeyword2, m1_editCourier, m1_editInvoice
+
+    if (naverBulkResults.Length = 0) {
+        SetStatus("엑셀에 입력할 크롤링 결과가 없습니다", "fail")
+        return
+    }
+
+    originalSearchKeyword := m1_editNaverKeyword.Value
+    originalKeyword1 := m1_editExcelKeyword.Value
+    originalKeyword2 := m1_editExcelKeyword2.Value
+    originalCourier := m1_editCourier.Value
+    originalInvoice := m1_editInvoice.Value
+
+    attemptedCount := 0
+    skippedCount := 0
+
+    try {
+        for item in naverBulkResults {
+            if (item.addressKey = "" || item.invoice = "") {
+                skippedCount += 1
+                continue
+            }
+
+            m1_editNaverKeyword.Value := ""
+            m1_editExcelKeyword.Value := item.addressKey
+            m1_editExcelKeyword2.Value := ""
+            m1_editCourier.Value := item.courier
+            m1_editInvoice.Value := item.invoice
+
+            attemptedCount += 1
+            FindInLastExcel()
+            Sleep(120)
+        }
+    } finally {
+        m1_editNaverKeyword.Value := originalSearchKeyword
+        m1_editExcelKeyword.Value := originalKeyword1
+        m1_editExcelKeyword2.Value := originalKeyword2
+        m1_editCourier.Value := originalCourier
+        m1_editInvoice.Value := originalInvoice
+    }
+
+    summary := "엑셀 순회 입력 완료: 시도 " attemptedCount "건"
+
+    if (skippedCount > 0) {
+        summary .= " / 건너뜀 " skippedCount "건"
+    }
+
+    SetStatus(summary, attemptedCount > 0 ? "ok" : "fail")
+}
+
+
+BuildNaverBulkClipboardText(item) {
+    return item.addressKey "`t" item.address "`t" item.courier "`t" item.invoice
+}
+
+
+ExtractNaverOrderListItems(text) {
+    lines := SplitCleanLines(text)
+    results := []
+    seenInvoices := Map()
+
+    for index, line in lines {
+        invoice := ExtractInvoiceNumber(line)
+
+        if (invoice = "" || seenInvoices.Has(invoice)) {
+            continue
+        }
+
+        blockText := JoinLineWindow(lines, index, 12)
+        courier := ExtractCourier(blockText)
+
+        if (courier = "" && !RegExMatch(blockText, "i)(송장|운송장|배송\s*조회|배송\s*추적|tracking|복사하기)")) {
+            continue
+        }
+
+        address := ExtractNaverBulkAddress(lines, index)
+        addressKey := ""
+
+        if (address != "") {
+            addressKey := GetAddressPart(NormalizeAddressText(address), 3)
+        }
+
+        results.Push({
+            market: "네이버",
+            address: address,
+            addressKey: addressKey,
+            courier: courier,
+            invoice: invoice,
+            raw: blockText
+        })
+
+        seenInvoices[invoice] := true
+    }
+
+    return results
+}
+
+
+SplitCleanLines(text) {
+    normalized := StrReplace(text, "`r`n", "`n")
+    normalized := StrReplace(normalized, "`r", "`n")
+    rawLines := StrSplit(normalized, "`n")
+    lines := []
+
+    for line in rawLines {
+        line := Trim(HtmlDecodeBasic(line))
+        line := RegExReplace(line, "\s+", " ")
+
+        if (line != "") {
+            lines.Push(line)
+        }
+    }
+
+    return lines
+}
+
+
+JoinLineWindow(lines, centerIndex, radius) {
+    startIndex := Max(1, centerIndex - radius)
+    endIndex := Min(lines.Length, centerIndex + radius)
+    text := ""
+
+    Loop endIndex - startIndex + 1 {
+        lineIndex := startIndex + A_Index - 1
+        text .= (text = "" ? "" : "`n") lines[lineIndex]
+    }
+
+    return text
+}
+
+
+ExtractNaverBulkAddress(lines, centerIndex) {
+    startIndex := Max(1, centerIndex - 18)
+    endIndex := Min(lines.Length, centerIndex + 18)
+
+    Loop endIndex - startIndex + 1 {
+        lineIndex := startIndex + A_Index - 1
+        line := lines[lineIndex]
+        candidate := ExtractAddressFromSingleLine(line)
+
+        if (candidate != "") {
+            return candidate
+        }
+
+        if RegExMatch(line, "^(주소|배송지|도로명)\s*[:：]?$") && lineIndex < lines.Length {
+            nextLine := lines[lineIndex + 1]
+
+            if IsKoreanAddressLine(nextLine) {
+                return CleanNaverAddressSuffix(CleanCommerceAddressSuffix(nextLine))
+            }
+        }
+    }
+
+    return ""
+}
+
+
+ExtractAddressFromSingleLine(line) {
+    if IsDeliveryTrackingLine(line) {
+        return ""
+    }
+
+    if RegExMatch(line, "^\s*(주소|배송지|도로명)\s*[:：]?\s*(.+)$", &addressMatch) {
+        candidate := Trim(addressMatch[2])
+
+        if IsKoreanAddressLine(candidate) {
+            return CleanNaverAddressSuffix(CleanCommerceAddressSuffix(candidate))
+        }
+    }
+
+    if IsKoreanAddressLine(line) {
+        return CleanNaverAddressSuffix(CleanCommerceAddressSuffix(line))
+    }
+
+    return ""
+}
+
+
+; ───────────────────────────────────────────────────────────
 ;  CrawlFromLastChrome
 ;  ------------------------------------------------------------
 ;  이전 단축키/핸들러 호환용
@@ -1556,15 +1858,21 @@ FindInLastExcel(*) {
         }
 
         if (extraKeyword != "") {
-            extraCells := FilterMatchesByRowKeyword(ws, matchedCells, extraKeyword)
+            extraCells := GetUniqueRowMatches(GetAllSpaceInsensitiveMatches(rng, extraKeyword))
 
             if (extraCells.Length = 0) {
+                AddHistory(keyword, false)
+                SetStatus("엑셀에서 두 번째 값을 찾지 못함: " extraKeyword, "fail")
+                return
+            }
+
+            matchedCells := IntersectMatchesByRow(matchedCells, extraCells)
+
+            if (matchedCells.Length = 0) {
                 AddHistory(keyword, false)
                 SetStatus("두 엑셀 검색값이 같은 행에 없습니다 - 입력 중단", "fail")
                 return
             }
-
-            matchedCells := extraCells
         }
 
         rowKeyword := Trim(m1_editNaverKeyword.Value)
@@ -1935,15 +2243,18 @@ FilterMatchesByRowKeyword(ws, matchedCells, rowKeyword) {
 
 GetComparableRowText(ws, row) {
     try {
-        usedColumns := ws.UsedRange.Columns.Count
+        usedRange := ws.UsedRange
+        startColumn := usedRange.Column
+        usedColumns := usedRange.Columns.Count
     } catch {
+        startColumn := 1
         usedColumns := 80
     }
 
     text := ""
 
     Loop usedColumns {
-        cell := ComRetry(() => ws.Cells(row, A_Index))
+        cell := ComRetry(() => ws.Cells(row, startColumn + A_Index - 1))
         text .= GetComparableCellText(cell)
     }
 
